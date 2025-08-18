@@ -337,7 +337,17 @@ export class PolymarketService {
 				const processedMarkets = recentMarkets.slice(0, limit).map((market) => {
 					try {
 						const rawMarket = marketSchema.parse(market);
-						return this.normalizeMarketData(rawMarket);
+						return {
+							id: rawMarket.condition_id,
+							question: rawMarket.question,
+							description: "",
+							endDate: rawMarket.end_date_iso || "",
+							outcomes: rawMarket.tokens.map((t) => t.outcome),
+							eventId: rawMarket.question_id || "",
+							eventTitle: "",
+							category: "",
+							conditionId: rawMarket.condition_id,
+						};
 					} catch (error) {
 						console.log("⚠️ Market validation failed, using fallback");
 						return this.createFallbackMarket(market);
@@ -581,26 +591,26 @@ export class PolymarketService {
 			const scoredMarkets: EnhancedMarket[] = enhancedMarkets.map((market) => {
 				const marketAny = market as Record<string, unknown>;
 				return {
-					id: marketAny.conditionId as string || "",
-					question: marketAny.question as string || "Unknown Market",
-					description: marketAny.description as string || "",
-					endDate: marketAny.endDate as string || "",
-					outcomes: marketAny.outcomes as string[] || ["Yes", "No"],
-					eventId: marketAny.questionID as string || "",
-					eventTitle: marketAny.eventTitle as string || "",
-					category: marketAny.category as string || "",
-					conditionId: marketAny.conditionId as string || "",
+					id: (marketAny.conditionId as string) || "",
+					question: (marketAny.question as string) || "Unknown Market",
+					description: (marketAny.description as string) || "",
+					endDate: (marketAny.endDate as string) || "",
+					outcomes: (marketAny.outcomes as string[]) || ["Yes", "No"],
+					eventId: (marketAny.questionID as string) || "",
+					eventTitle: (marketAny.eventTitle as string) || "",
+					category: (marketAny.category as string) || "",
+					conditionId: (marketAny.conditionId as string) || "",
 					relevanceScore: this.calculateRelevanceScore(
 						{
-							id: marketAny.conditionId as string || "",
-							question: marketAny.question as string || "Unknown Market",
-							description: marketAny.description as string || "",
-							endDate: marketAny.endDate as string || "",
-							outcomes: marketAny.outcomes as string[] || ["Yes", "No"],
-							eventId: marketAny.questionID as string || "",
-							eventTitle: marketAny.eventTitle as string || "",
-							category: marketAny.category as string || "",
-							conditionId: marketAny.conditionId as string || "",
+							id: (marketAny.conditionId as string) || "",
+							question: (marketAny.question as string) || "Unknown Market",
+							description: (marketAny.description as string) || "",
+							endDate: (marketAny.endDate as string) || "",
+							outcomes: (marketAny.outcomes as string[]) || ["Yes", "No"],
+							eventId: (marketAny.questionID as string) || "",
+							eventTitle: (marketAny.eventTitle as string) || "",
+							category: (marketAny.category as string) || "",
+							conditionId: (marketAny.conditionId as string) || "",
 						},
 						query,
 						category,
@@ -611,10 +621,9 @@ export class PolymarketService {
 				};
 			});
 
-			// Filter by relevance threshold
+			// Filter by relevance threshold (temporarily disabled for testing)
 			const relevantMarkets = scoredMarkets.filter(
-				(market) =>
-					market.relevanceScore >= 0.01 && (market.liquidity || 0) >= 0,
+				(market) => (market.liquidity || 0) >= 0, // Only filter by liquidity
 			);
 
 			console.log(
@@ -850,8 +859,6 @@ export class PolymarketService {
 		}
 	}
 
-
-
 	/**
 	 * Create fallback market data when parsing fails
 	 */
@@ -882,7 +889,18 @@ export class PolymarketService {
 		try {
 			const market = await this.clobClient.getMarket(conditionId);
 			const rawMarket = marketSchema.parse(market);
-			return this.normalizeMarketData(rawMarket);
+			// Convert CLOB API response to Market format
+			return {
+				id: rawMarket.condition_id,
+				question: rawMarket.question,
+				description: "",
+				endDate: rawMarket.end_date_iso || "",
+				outcomes: rawMarket.tokens.map((t) => t.outcome),
+				eventId: rawMarket.question_id || "",
+				eventTitle: "",
+				category: "",
+				conditionId: rawMarket.condition_id,
+			};
 		} catch (error) {
 			console.error("Error fetching market:", error);
 			throw error;
