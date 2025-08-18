@@ -33,11 +33,15 @@
 	"dependencies": {
 		"@coingecko/coingecko-mcp": "^1.11.2",
 		"@iqai/adk": "^0.1.19",
+		"abitype": "^1.0.8",
 		"better-sqlite3": "^12.2.0",
 		"dotenv": "^17.2.0",
+		"uuid": "^11.1.0",
+		"viem": "^2.34.0",
 		"zod": "^4.0.5"
 	},
 	"devDependencies": {
+		"@types/better-sqlite3": "^7.6.13",
 		"@types/node": "^22.16.0",
 		"rimraf": "^6.0.1",
 		"tsx": "^4.20.3",
