@@ -7,30 +7,54 @@ import { env } from "../env";
  * Main orchestrator that guides users through the Polymarket onboarding
  * experience by coordinating with specialized sub-agents.
  */
+type AgentRunner = Awaited<
+	ReturnType<typeof AgentBuilder.prototype.build>
+>["runner"];
+
 export async function createOnboardingCoordinator(subAgents: {
-	interestProfiler: any;
-	marketRecommender: any;
+	interestProfiler: AgentRunner;
+	marketRecommender: AgentRunner;
 }) {
-	// Create agent tools for delegation
+	// Create agent tools for delegation using Agent-as-a-Tool pattern
 	const interestProfilerTool = createTool({
 		name: "profile_user_interests",
-		description: "Discover user interests and preferences through conversation",
-		fn: async (args, context) => {
-			return await subAgents.interestProfiler.ask(
-				"Please help profile this user's interests based on our conversation.",
-				context,
-			);
+		description:
+			"Discover and analyze user interests through specialized conversation to build their market preference profile",
+		/**
+		 * Delegates to the Interest Profiler Agent to discover user preferences
+		 * @param query - Optional specific query about user interests
+		 * @returns Structured user interest profile
+		 */
+		fn: async (args: { query?: string }, context) => {
+			const message = args.query
+				? `Please help profile this user's interests, focusing on: ${args.query}`
+				: "Please help profile this user's interests based on our conversation.";
+
+			return await subAgents.interestProfiler.ask(message);
 		},
 	});
 
 	const marketRecommenderTool = createTool({
 		name: "recommend_markets",
-		description: "Find and recommend markets based on user interests",
-		fn: async (args, context) => {
-			return await subAgents.marketRecommender.ask(
-				"Please recommend markets based on the user profile.",
-				context,
-			);
+		description:
+			"Find and recommend relevant Polymarket markets based on user interests and preferences",
+		/**
+		 * Delegates to the Market Recommender Agent to find relevant markets
+		 * @param interests - Specific interests to search for
+		 * @param limit - Maximum number of markets to recommend
+		 * @returns Structured market recommendations with trading options
+		 */
+		fn: async (args: { interests?: string; limit?: number }, context) => {
+			let message = "Please recommend markets based on the user profile.";
+
+			if (args.interests) {
+				message = `Please recommend markets for someone interested in: ${args.interests}`;
+			}
+			if (args.limit) {
+				message += ` Limit to ${args.limit} recommendations.`;
+			}
+
+			return await subAgents.marketRecommender.ask(message);
 		},
 	});
 

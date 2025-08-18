@@ -6,17 +6,45 @@ import { z } from "zod";
 /**
  * Zod schemas for validating Polymarket API responses
  */
+const tokenSchema = z.object({
+	token_id: z.string(),
+	outcome: z.string(),
+});
+
+const rewardsSchema = z.object({
+	min_size: z.number().optional(),
+	max_spread: z.number().optional(),
+	event_start_date: z.string().optional(),
+	event_end_date: z.string().optional(),
+	in_game_multiplier: z.number().optional(),
+	reward_epoch: z.number().optional(),
+});
+
 const marketSchema = z.object({
-	id: z.string(),
+	condition_id: z.string().optional(),
+	question_id: z.string().optional(),
+	tokens: z.array(tokenSchema).optional(),
+	rewards: rewardsSchema.optional(),
+	minimum_order_size: z.union([z.string(), z.number()]).optional(),
+	minimum_tick_size: z.union([z.string(), z.number()]).optional(),
+	category: z.string().optional(),
+	end_date_iso: z.string().nullable().optional(),
+	game_start_time: z.string().nullable().optional(),
 	question: z.string(),
+	market_slug: z.string().optional(),
+	min_incentive_size: z.string().optional(),
+	max_incentive_spread: z.string().optional(),
+	active: z.boolean().optional(),
+	closed: z.boolean().optional(),
+	seconds_delay: z.number().optional(),
+	icon: z.string().optional(),
+	fpmm: z.string().optional(),
+	// Additional fields that might come from different API endpoints
 	description: z.string().optional(),
-	endDate: z.string().optional(),
-	outcomes: z.array(z.string()).optional(),
-	// Gamma structure fields
 	eventId: z.string().optional(),
 	eventTitle: z.string().optional(),
-	category: z.string().optional(),
-	conditionId: z.string().optional(),
+	volume24hr: z.number().optional(),
+	liquidity: z.number().optional(),
 });
 
 const orderBookSchema = z.object({
@@ -34,8 +62,21 @@ const orderBookSchema = z.object({
 	),
 });
 
-type Market = z.infer<typeof marketSchema>;
+type RawMarket = z.infer<typeof marketSchema>;
 type OrderBook = z.infer<typeof orderBookSchema>;
+
+// Simplified market interface for external consumption
+export interface Market {
+	id: string;
+	question: string;
+	description?: string;
+	endDate?: string;
+	outcomes?: string[];
+	eventId?: string;
+	eventTitle?: string;
+	category?: string;
+	conditionId?: string;
+}
 
 interface EnhancedMarket extends Market {
 	relevanceScore: number;
@@ -179,22 +220,39 @@ export class PolymarketService {
 			// API returns { data: [], next_cursor: "", limit: 500, count: 500 }
 			const marketData = Array.isArray(markets) ? markets : markets?.data || [];
 			if (Array.isArray(marketData)) {
-				const processedMarkets = marketData.slice(0, limit).map((market) => {
+				// Filter for recent markets only (last 60 days)
+				const cutoffDate = new Date();
+				cutoffDate.setDate(cutoffDate.getDate() - 60);
+				console.log(
+					`📅 Filtering markets newer than: ${cutoffDate.toISOString()}`,
+				);
+
+				const recentMarkets = marketData.filter((market: any) => {
+					const endDate = market.end_date_iso || market.endDate;
+					if (!endDate) return false;
+
+					const marketEndDate = new Date(endDate);
+					const isRecent = marketEndDate > cutoffDate;
+					const isActive = market.active !== false;
+
+					return isRecent && isActive;
+				});
+
+				console.log(
+					`📊 Filtered from ${marketData.length} to ${recentMarkets.length} recent active markets`,
+				);
+
+				const processedMarkets = recentMarkets.slice(0, limit).map((market) => {
 					try {
-						return marketSchema.parse(market);
+						const rawMarket = marketSchema.parse(market);
+						return this.normalizeMarketData(rawMarket);
 					} catch (error) {
 						console.log("⚠️ Market validation failed, using fallback:", {
 							market,
 							error: error instanceof Error ? error.message : "Unknown error",
 						});
-						// Return basic structure if validation fails
-						return {
-							id: market.id || "unknown",
-							question: market.question || "Unknown market",
-							description: market.description,
-							endDate: market.endDate,
-							outcomes: market.outcomes,
-						};
+						// Return normalized market even if validation fails
+						return this.normalizeMarketData(market);
 					}
 				});
 				console.log(`✅ Processed ${processedMarkets.length} markets`);
@@ -431,7 +489,8 @@ export class PolymarketService {
 				allResults.push(
 					...results.map((r) => ({
 						...r,
-						relevanceScore: (r as any).relevanceScore || 0,
+						relevanceScore:
+							(r as { relevanceScore?: number }).relevanceScore || 0,
 					})),
 				);
 			} catch (error) {
@@ -923,7 +982,8 @@ export class PolymarketService {
 
 		try {
 			const market = await this.clobClient.getMarket(conditionId);
-			return marketSchema.parse(market);
+			const rawMarket = marketSchema.parse(market);
+			return this.normalizeMarketData(rawMarket);
 		} catch (error) {
 			console.error("Error fetching market:", error);
 			throw error;
@@ -1297,7 +1357,7 @@ export class PolymarketService {
 			offset?: number;
 			active?: boolean;
 			closed?: boolean;
-			order?: "volume24hr" | "liquidity" | "newest" | "ending_soonest";
+			order?: "volume24hr" | "liquidity" | "volume";
 			min_liquidity?: number;
 			tags?: string[];
 		} = {},
@@ -1321,13 +1381,13 @@ export class PolymarketService {
 				min_liquidity: min_liquidity.toString(),
 			});
 
-			// Use a date from a few months ago to get current markets
+			// Use a date from a few weeks ago to get current markets
 			// This filters for markets that started recently and are still active
-			const threeMonthsAgo = new Date();
-			threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 1);
-			params.append("start_date_min", threeMonthsAgo.toISOString());
+			const recentDate = new Date();
+			recentDate.setDate(recentDate.getDate() - 30); // 30 days ago for more current markets
+			params.append("start_date_min", recentDate.toISOString());
 			console.log(
-				`📅 Using start_date_min filter: ${threeMonthsAgo.toISOString()}`,
+				`📅 Using start_date_min filter: ${recentDate.toISOString()}`,
 			);
 
 			if (tags.length > 0) {
@@ -1424,7 +1484,7 @@ export class PolymarketService {
 
 				const gammaMarkets = await this.getMarketsFromGamma({
 					limit: Math.min(limit * 2, 50), // Reduced over-fetching
-					order: sortBy === "popularity" ? "volume24hr" : "newest",
+					order: sortBy === "popularity" ? "volume24hr" : "volume",
 					min_liquidity: minLiquidity,
 					active: true,
 					tags, // Smart tag filtering
@@ -1436,7 +1496,10 @@ export class PolymarketService {
 			// Fallback to CLOB API if Gamma fails or is disabled
 			if (enhancedMarkets.length === 0) {
 				console.log("📡 Using CLOB API as fallback");
-				enhancedMarkets = await this.getMarkets(Math.min(limit * 2, 100)); // Reduced over-fetching
+				const fallbackMarkets = await this.getMarkets(Math.min(limit * 2, 100)); // Reduced over-fetching
+				enhancedMarkets = fallbackMarkets.map(
+					(market) => market as unknown as Record<string, unknown>,
+				);
 			}
 
 			// Apply relevance scoring
@@ -1472,7 +1535,21 @@ export class PolymarketService {
 			console.log(
 				`🎯 Enhanced search found ${sortedMarkets.length} relevant markets`,
 			);
-			return sortedMarkets.slice(0, limit);
+			// Convert EnhancedMarket[] back to Market[] while preserving IDs
+			const finalMarkets: Market[] = sortedMarkets
+				.slice(0, limit)
+				.map((market) => ({
+					id: market.id,
+					question: market.question,
+					description: market.description,
+					endDate: market.endDate,
+					outcomes: market.outcomes,
+					eventId: market.eventId,
+					eventTitle: market.eventTitle,
+					category: market.category,
+					conditionId: market.conditionId,
+				}));
+			return finalMarkets;
 		} catch (error) {
 			console.error(
 				"❌ Enhanced search failed, falling back to basic search:",
@@ -1485,33 +1562,50 @@ export class PolymarketService {
 	/**
 	 * Normalize market data from different API sources
 	 */
-	private normalizeMarketData(market: Record<string, unknown>): Market {
-		const outcomes = market.outcomes as string[] | undefined;
-		const outcomePrices = market.outcome_prices as
+	private normalizeMarketData(
+		market: RawMarket | Record<string, unknown>,
+	): Market {
+		// Extract outcomes from various possible sources using type-safe access
+		const marketAny = market as any;
+		const tokens = marketAny.tokens as Array<{ outcome: string }> | undefined;
+		const outcomes = marketAny.outcomes as string[] | undefined;
+		const outcomePrices = marketAny.outcome_prices as
 			| Array<{ outcome: string }>
 			| undefined;
-		const event = market.event as { title?: string } | undefined;
-		const tags = market.tags as string[] | undefined;
+		const event = marketAny.event as { title?: string } | undefined;
+		const tags = marketAny.tags as string[] | undefined;
 
 		return {
 			id: String(
-				market.condition_id || market.id || market.question_id || "unknown",
+				marketAny.condition_id ||
+					marketAny.question_id ||
+					marketAny.id ||
+					marketAny.market_slug ||
+					"unknown",
 			),
-			question: String(market.question || market.title || "Unknown market"),
-			description: String(market.description || market.description_text || ""),
+			question: String(
+				marketAny.question || marketAny.title || "Unknown market",
+			),
+			description: String(
+				marketAny.description || marketAny.description_text || "",
+			),
 			endDate: String(
-				market.end_date_iso || market.endDate || market.end_time || "",
+				marketAny.end_date_iso || marketAny.endDate || marketAny.end_time || "",
 			),
-			outcomes: outcomes || outcomePrices?.map((p) => p.outcome) || [],
-			eventId: String(market.event_id || market.eventId || ""),
+			outcomes:
+				outcomes ||
+				tokens?.map((t) => t.outcome) ||
+				outcomePrices?.map((p) => p.outcome) ||
+				[],
+			eventId: String(marketAny.event_id || marketAny.eventId || ""),
 			eventTitle: String(
-				event?.title || market.eventTitle || market.event_name || "",
+				event?.title || marketAny.eventTitle || marketAny.event_name || "",
 			),
 			category: String(
-				market.category || tags?.[0] || market.market_type || "",
+				marketAny.category || tags?.[0] || marketAny.market_type || "",
 			),
 			conditionId: String(
-				market.condition_id || market.conditionId || market.id || "",
+				marketAny.condition_id || marketAny.conditionId || marketAny.id || "",
 			),
 		};
 	}

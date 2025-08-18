@@ -12,7 +12,8 @@ export const config = {
 		apiKey: process.env.CLOB_API_KEY || "",
 		secret: process.env.CLOB_SECRET || "",
 		passphrase: process.env.CLOB_PASS_PHRASE || "",
-		walletPrivateKey: process.env.WALLET_PRIVATE_KEY || "",
+		walletPrivateKey:
+			process.env.WALLET_PRIVATE_KEY || process.env.PRIVATE_KEY || "",
 	},
 	polygonRpc: process.env.POLYGON_RPC_URL || "https://polygon-rpc.com",
 };
