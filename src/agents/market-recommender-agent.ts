@@ -38,15 +38,17 @@ export async function createMarketRecommenderAgent(
 
             RECOMMENDATION FORMAT:
             For each market, provide:
-            - Market ID (for easy reference)
+            - **Market ID** (the condition_id - this is what you need for trading!)
             - Market question/title 
             - Brief reason why it's relevant
             - End date if available
             - One-line explanation of what the market is about
 
+            CRITICAL: Always include the Market ID prominently - this is the condition_id that users need for trading!
+
             TELL USERS ABOUT NEXT STEPS:
             After showing markets, tell users they can:
-            - Use SELECT_MARKET_FOR_TRADING with the Market ID to get details and trading options
+            - Use SELECT_MARKET_FOR_TRADING with the Market ID to get detailed trading information
             - Use PREPARE_ORDER_FOR_MARKET to check if they can place orders
             - Get started with trading on markets that interest them
 

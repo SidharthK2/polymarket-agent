@@ -1,5 +1,6 @@
 import { AgentBuilder, createTool } from "@iqai/adk";
 import { env } from "../env";
+import z from "zod";
 
 /**
  * Onboarding Coordinator Agent
@@ -14,6 +15,7 @@ type AgentRunner = Awaited<
 export async function createOnboardingCoordinator(subAgents: {
 	interestProfiler: AgentRunner;
 	marketRecommender: AgentRunner;
+	selectMarketForTrading: AgentRunner;
 }) {
 	// Create agent tools for delegation using Agent-as-a-Tool pattern
 	const interestProfilerTool = createTool({
@@ -58,6 +60,22 @@ export async function createOnboardingCoordinator(subAgents: {
 		},
 	});
 
+	const selectMarketForTradingTool = createTool({
+		name: "select_market_for_trading",
+		description:
+			"Get detailed information about a specific market to prepare for trading",
+		fn: async (args, context) => {
+			const message =
+				"Please help the user select and analyze a market for trading. Look for any market ID mentioned in our conversation and use the SELECT_MARKET_FOR_TRADING tool with that ID.";
+
+			console.log("🔍 Delegating to selectMarketForTrading agent");
+			const result = await subAgents.selectMarketForTrading.ask(message);
+			console.log("📊 Result:", result);
+
+			return result;
+		},
+	});
+
 	const { runner } = await AgentBuilder.create("onboarding_coordinator")
 		.withDescription(
 			"Guides users through personalized Polymarket onboarding experience",
@@ -91,7 +109,11 @@ export async function createOnboardingCoordinator(subAgents: {
 
             PERSONALITY: Friendly guide, knowledgeable but not pushy, focused on education and discovery rather than promoting trading.
         `)
-		.withTools(interestProfilerTool, marketRecommenderTool)
+		.withTools(
+			interestProfilerTool,
+			marketRecommenderTool,
+			selectMarketForTradingTool,
+		)
 		.build();
 
 	return runner;

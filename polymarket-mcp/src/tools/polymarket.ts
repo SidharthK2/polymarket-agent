@@ -397,6 +397,7 @@ export const getMarketsByEventsTool = {
 /**
  * Tool to get available Polymarket prediction markets
  */
+// In your MCP tool file, change GET_POLYMARKET_MARKETS to use Gamma API:
 export const getMarketsTool = {
 	name: "GET_POLYMARKET_MARKETS",
 	description: "Get a list of available Polymarket prediction markets",
@@ -405,35 +406,31 @@ export const getMarketsTool = {
 		const polymarketService = new PolymarketService();
 
 		try {
-			const markets = await polymarketService.getMarkets(params.limit);
+			// ✅ Use Gamma API instead of CLOB
+			const markets = await polymarketService.searchMarketsEnhanced("", {
+				limit: params.limit,
+				useGammaAPI: true,
+			});
 
 			if (markets.length === 0) {
-				return "No markets found.";
+				return "No markets found. The Gamma API may be temporarily unavailable.";
 			}
 
-			return dedent`
-				Found ${markets.length} Polymarket prediction markets:
-
-				${markets
-					.map(
-						(market, index) => dedent`
-					${index + 1}. ${market.question}
-					   ID: ${market.id}
-					   ${market.description ? `Description: ${market.description}` : ""}
-					   ${market.endDate ? `End Date: ${market.endDate}` : ""}
-					   ${market.outcomes ? `Outcomes: ${market.outcomes.join(", ")}` : ""}
-				`,
-					)
-					.join("\n\n")}
-			`;
+			return `Found ${markets.length} Polymarket prediction markets:\n\n${markets
+				.map(
+					(market, index) =>
+						`${index + 1}. ${market.question}\n` +
+						`   ID: ${market.id}\n` +
+						`   Category: ${market.category || "Unknown"}\n` +
+						`   End Date: ${market.endDate || "TBD"}`,
+				)
+				.join("\n\n")}`;
 		} catch (error) {
-			if (error instanceof Error) {
-				return `Error fetching markets: ${error.message}`;
-			}
-			return "An unknown error occurred while fetching markets";
+			console.error("Error in getMarketsTool:", error);
+			return `Error fetching markets: ${error instanceof Error ? error.message : "Unknown error"}`;
 		}
 	},
-} as const;
+};
 
 /**
  * Tool to get details for a specific Polymarket market
@@ -855,79 +852,73 @@ export const selectMarketTool = {
 	description:
 		"Get detailed information about a specific market to prepare for trading",
 	parameters: z.object({
-		marketId: z
-			.string()
-			.describe("Market ID (condition_id) from the market recommendations"),
-		showOrderBook: z
-			.boolean()
-			.optional()
-			.default(false)
-			.describe("Whether to include current order book data"),
+		marketId: z.string().describe("Market ID to analyze"),
 	}),
-	execute: async (params: { marketId: string; showOrderBook?: boolean }) => {
+	execute: async (params: { marketId: string }) => {
+		console.log("🔍 SELECT_MARKET_FOR_TRADING called with:", params);
+		console.log(
+			`🔍 marketId: "${params.marketId}" (type: ${typeof params.marketId})`,
+		);
+
 		const polymarketService = new PolymarketService();
 
 		try {
-			// Get market details
+			// Try to get the market
+			console.log(`📊 Calling getMarket with: "${params.marketId}"`);
 			const market = await polymarketService.getMarket(params.marketId);
 
+			console.log("✅ Market found:", market);
+
+			// Get order book for the first token to show current prices
 			let orderBookInfo = "";
-			if (
-				params.showOrderBook &&
-				market.outcomes &&
-				market.outcomes.length > 0
-			) {
-				try {
-					// For binary markets, typically use the first outcome token
-					const tokenId = market.outcomes[0] || "";
-					if (tokenId) {
-						const orderBook = await polymarketService.getOrderBook(tokenId);
-						const bestBidPrice = Number(orderBook.bids?.[0]?.price || 0);
-						const bestAskPrice = Number(orderBook.asks?.[0]?.price || 0);
-						const spread = bestAskPrice - bestBidPrice;
+			try {
+				if (market.outcomes && market.outcomes.length > 0) {
+					// For binary markets, get order book for the "Yes" outcome
+					const yesTokenId =
+						market.outcomes[0] === "Yes"
+							? market.outcomes[0]
+							: market.outcomes[1];
+					const orderBook = await polymarketService.getOrderBook(yesTokenId);
 
-						orderBookInfo = dedent`
-							
-							📊 **Current Order Book:**
-							💰 **Best Buy Price:** $${bestBidPrice.toFixed(3)}
-							💎 **Best Sell Price:** $${bestAskPrice.toFixed(3)}
-							📈 **Spread:** $${spread.toFixed(3)}
-						`;
+					if (orderBook.bids.length > 0 && orderBook.asks.length > 0) {
+						const bestBid = Number(orderBook.bids[0].price);
+						const bestAsk = Number(orderBook.asks[0].price);
+						orderBookInfo = `\n💰 Current Prices: Best Bid: $${bestBid.toFixed(3)}, Best Ask: $${bestAsk.toFixed(3)}`;
 					}
-				} catch (error) {
-					orderBookInfo = "\n⚠️ Order book data unavailable";
 				}
+			} catch (orderBookError) {
+				console.log("⚠️ Could not fetch order book:", orderBookError);
 			}
 
-			return dedent`
-				🎯 **Market Selected: ${market.question}**
-				
-				📋 **Market Details:**
-				🆔 **Market ID:** ${params.marketId}
-				📝 **Description:** ${market.description || "No description available"}
-				📅 **End Date:** ${market.endDate ? new Date(market.endDate).toLocaleDateString() : "No end date"}
-				🏷️ **Category:** ${market.category || "Uncategorized"}
-				
-				🎲 **Outcomes:**
-				${market.outcomes?.map((outcome, i) => `${i + 1}. ${outcome}`).join("\n") || "Binary market (Yes/No)"}
-				${orderBookInfo}
-				
-				💡 **Next Steps:**
-				• Use CHECK_BUY_ORDER_REQUIREMENTS to verify you can place a buy order
-				• Use CHECK_SELL_ORDER_REQUIREMENTS to verify you can sell (if you hold tokens)
-				• Use CREATE_POLYMARKET_BUY_ORDER to place a buy order
-				• Use CREATE_POLYMARKET_SELL_ORDER to place a sell order
-				
-				📌 **Remember:** Market ID ${params.marketId} for your orders
-			`;
+			return `✅ **Market Details for Trading**
+			
+🎯 **Market**: ${market.question}
+🆔 **Market ID**: ${market.id}
+📅 **End Date**: ${market.endDate || "Not specified"}
+🏷️ **Category**: ${market.category || "General"}
+
+📊 **Outcomes**: ${market.outcomes.join(" | ")}
+${orderBookInfo}
+
+💡 **Next Steps**:
+• Use PREPARE_ORDER_FOR_MARKET to check if you can place orders
+• Use CREATE_POLYMARKET_BUY_ORDER to place buy orders
+• Use CREATE_POLYMARKET_SELL_ORDER to place sell orders
+
+🔗 **Market ID for trading**: ${market.id}`;
 		} catch (error) {
-			if (error instanceof Error) {
-				return `Error fetching market details: ${error.message}`;
-			}
-			return "An unknown error occurred while fetching market details";
+			console.error("❌ getMarket failed:", error);
+			const errorMessage =
+				error instanceof Error ? error.message : String(error);
+			console.error("❌ Error details:", {
+				message: errorMessage,
+				stack: error instanceof Error ? error.stack : undefined,
+			});
+
+			return `❌ Error fetching market ${params.marketId}: ${errorMessage}`;
 		}
 	},
-} as const;
+};
 
 /**
  * Quick order preparation tool

@@ -5,6 +5,7 @@ import * as dotenv from "dotenv";
 import { createOnboardingCoordinator } from "./agents/onboarding-coordinator";
 import { createInterestProfilerAgent } from "./agents/interest-profiler-agent";
 import { createMarketRecommenderAgent } from "./agents/market-recommender-agent";
+import { createSelectMarketForTradingAgent } from "./agents/trading-agent";
 
 dotenv.config();
 
@@ -66,7 +67,7 @@ async function main() {
 			env: {
 				PATH: env.PATH || "",
 				// Polymarket authentication (pass through from main environment)
-				WALLET_PRIVATE_KEY: process.env.WALLET_PRIVATE_KEY || "",
+				PRIVATE_KEY: process.env.PRIVATE_KEY || "",
 				CLOB_API_KEY: process.env.CLOB_API_KEY || "",
 				CLOB_SECRET: process.env.CLOB_SECRET || "",
 				CLOB_PASS_PHRASE: process.env.CLOB_PASS_PHRASE || "",
@@ -84,11 +85,14 @@ async function main() {
 		const interestProfiler = await createInterestProfilerAgent();
 		const marketRecommender =
 			await createMarketRecommenderAgent(polymarketTools);
+		const selectMarketForTrading =
+			await createSelectMarketForTradingAgent(polymarketTools);
 
 		// Create the main coordinator agent
 		const coordinatorRunner = await createOnboardingCoordinator({
 			interestProfiler,
 			marketRecommender,
+			selectMarketForTrading,
 		});
 
 		// Create sampling handler for the Telegram MCP
