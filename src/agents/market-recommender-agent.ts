@@ -38,13 +38,14 @@ export async function createMarketRecommenderAgent(
 
             RECOMMENDATION FORMAT:
             For each market, provide:
-            - **Market ID** (the condition_id - this is what you need for trading!)
+            - **Market ID: [conditionId]** (the 0x... format - this is what you need for trading!)
             - Market question/title 
             - Brief reason why it's relevant
             - End date if available
             - One-line explanation of what the market is about
 
-            CRITICAL: Always include the Market ID prominently - this is the condition_id that users need for trading!
+            CRITICAL: Always include the Market ID prominently in this exact format: "Market ID: [conditionId]"
+            The conditionId is the 0x... format that trading tools expect!
 
             TELL USERS ABOUT NEXT STEPS:
             After showing markets, tell users they can:

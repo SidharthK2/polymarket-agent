@@ -76,6 +76,25 @@ export async function createOnboardingCoordinator(subAgents: {
 		},
 	});
 
+	const tradingActionsTool = createTool({
+		name: "trading_actions",
+		description:
+			"Handle trading-related actions like checking prices, placing orders, and market analysis",
+		fn: async (args: { action?: string }, context) => {
+			const message = args.action
+				? `Please help with this trading action: ${args.action}`
+				: "Please help with trading actions like checking prices, placing orders, or market analysis.";
+
+			console.log(
+				"🔍 Delegating to selectMarketForTrading agent for trading actions",
+			);
+			const result = await subAgents.selectMarketForTrading.ask(message);
+			console.log("📊 Trading Result:", result);
+
+			return result;
+		},
+	});
+
 	const { runner } = await AgentBuilder.create("onboarding_coordinator")
 		.withDescription(
 			"Guides users through personalized Polymarket onboarding experience",
@@ -99,6 +118,11 @@ export async function createOnboardingCoordinator(subAgents: {
             - Coordinate the overall experience
             - Synthesize information from multiple agents
             - Keep the conversation flowing naturally
+            
+            TRADING ACTIONS:
+            - When users want to check prices, place orders, or do trading analysis → use trading_actions
+            - The trading agent has access to all Polymarket tools (orderbook, orders, etc.)
+            - Delegate complex trading operations to the trading agent
 
             USER EXPERIENCE PRINCIPLES:
             - Make it feel conversational, not robotic
@@ -113,6 +137,7 @@ export async function createOnboardingCoordinator(subAgents: {
 			interestProfilerTool,
 			marketRecommenderTool,
 			selectMarketForTradingTool,
+			tradingActionsTool,
 		)
 		.build();
 

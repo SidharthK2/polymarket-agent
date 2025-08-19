@@ -58,7 +58,11 @@ const getOrderBookParams = z.object({
 });
 
 const createOrderParams = z.object({
-	tokenId: z.string().min(1).describe("The token ID to trade"),
+	marketId: z.string().min(1).describe("The market ID to trade"),
+	outcome: z
+		.string()
+		.min(1)
+		.describe("The outcome to trade (e.g., 'Yes', 'No', 'Up', 'Down')"),
 	price: z
 		.number()
 		.min(0.01)
@@ -514,7 +518,7 @@ export const getOrderBookTool = {
  */
 export const createBuyOrderTool = {
 	name: "CREATE_POLYMARKET_BUY_ORDER",
-	description: "Create a buy order on Polymarket for a specific token",
+	description: "Create a buy order on Polymarket for a specific outcome",
 	parameters: createOrderParams,
 	execute: async (params: CreateOrderParams) => {
 		const polymarketService = new PolymarketService();
@@ -524,8 +528,24 @@ export const createBuyOrderTool = {
 		}
 
 		try {
+			// Get raw market data to access token IDs
+			const rawMarketData = await polymarketService.getRawMarket(
+				params.marketId,
+			);
+			const market = rawMarketData.market;
+			const tokens = rawMarketData.tokens;
+
+			// Find the token ID for the specified outcome
+			const token = tokens.find((t) => t.outcome === params.outcome);
+			if (!token) {
+				const availableOutcomes = tokens
+					.map((t) => `"${t.outcome}"`)
+					.join(", ");
+				return `❌ Invalid outcome "${params.outcome}". Available outcomes: ${availableOutcomes}`;
+			}
+
 			const result = await polymarketService.createBuyOrder(
-				params.tokenId,
+				token.token_id,
 				params.price,
 				params.size,
 			);
@@ -535,7 +555,9 @@ export const createBuyOrderTool = {
 					✅ Buy Order Created Successfully!
 
 					Order ID: ${result.orderId}
-					Token: ${params.tokenId}
+					Market: ${market.question}
+					Outcome: ${params.outcome}
+					Token ID: ${token.token_id}
 					Price: ${params.price}
 					Size: ${params.size} shares
 					Side: BUY
@@ -558,7 +580,7 @@ export const createBuyOrderTool = {
  */
 export const createSellOrderTool = {
 	name: "CREATE_POLYMARKET_SELL_ORDER",
-	description: "Create a sell order on Polymarket for a specific token",
+	description: "Create a sell order on Polymarket for a specific outcome",
 	parameters: createOrderParams,
 	execute: async (params: CreateOrderParams) => {
 		const polymarketService = new PolymarketService();
@@ -568,8 +590,24 @@ export const createSellOrderTool = {
 		}
 
 		try {
+			// Get raw market data to access token IDs
+			const rawMarketData = await polymarketService.getRawMarket(
+				params.marketId,
+			);
+			const market = rawMarketData.market;
+			const tokens = rawMarketData.tokens;
+
+			// Find the token ID for the specified outcome
+			const token = tokens.find((t) => t.outcome === params.outcome);
+			if (!token) {
+				const availableOutcomes = tokens
+					.map((t) => `"${t.outcome}"`)
+					.join(", ");
+				return `❌ Invalid outcome "${params.outcome}". Available outcomes: ${availableOutcomes}`;
+			}
+
 			const result = await polymarketService.createSellOrder(
-				params.tokenId,
+				token.token_id,
 				params.price,
 				params.size,
 			);
@@ -579,7 +617,9 @@ export const createSellOrderTool = {
 					✅ Sell Order Created Successfully!
 
 					Order ID: ${result.orderId}
-					Token: ${params.tokenId}
+					Market: ${market.question}
+					Outcome: ${params.outcome}
+					Token ID: ${token.token_id}
 					Price: ${params.price}
 					Size: ${params.size} shares
 					Side: SELL
@@ -863,31 +903,47 @@ export const selectMarketTool = {
 		const polymarketService = new PolymarketService();
 
 		try {
-			// Try to get the market
-			console.log(`📊 Calling getMarket with: "${params.marketId}"`);
-			const market = await polymarketService.getMarket(params.marketId);
+			// Try to get the raw market data with token IDs
+			console.log(`📊 Calling getRawMarket with: "${params.marketId}"`);
+			const rawMarketData = await polymarketService.getRawMarket(
+				params.marketId,
+			);
+			const market = rawMarketData.market;
 
 			console.log("✅ Market found:", market);
+			console.log("✅ Token data:", rawMarketData.tokens);
 
-			// Get order book for the first token to show current prices
+			// Get order book for each token to show current prices
 			let orderBookInfo = "";
 			try {
-				if (market.outcomes && market.outcomes.length > 0) {
-					// For binary markets, get order book for the "Yes" outcome
-					const yesTokenId =
-						market.outcomes[0] === "Yes"
-							? market.outcomes[0]
-							: market.outcomes[1];
-					const orderBook = await polymarketService.getOrderBook(yesTokenId);
+				if (rawMarketData.tokens && rawMarketData.tokens.length > 0) {
+					orderBookInfo = "\n💰 **Current Prices:**\n";
 
-					if (orderBook.bids.length > 0 && orderBook.asks.length > 0) {
-						const bestBid = Number(orderBook.bids[0].price);
-						const bestAsk = Number(orderBook.asks[0].price);
-						orderBookInfo = `\n💰 Current Prices: Best Bid: $${bestBid.toFixed(3)}, Best Ask: $${bestAsk.toFixed(3)}`;
+					for (const token of rawMarketData.tokens) {
+						try {
+							const orderBook = await polymarketService.getOrderBook(
+								token.token_id,
+							);
+
+							if (orderBook.bids.length > 0 && orderBook.asks.length > 0) {
+								const bestBid = Number(orderBook.bids[0].price);
+								const bestAsk = Number(orderBook.asks[0].price);
+								orderBookInfo += `• **${token.outcome}**: Bid $${bestBid.toFixed(3)} | Ask $${bestAsk.toFixed(3)}\n`;
+							} else {
+								orderBookInfo += `• **${token.outcome}**: No active orders\n`;
+							}
+						} catch (tokenError) {
+							console.log(
+								`⚠️ Could not fetch order book for ${token.outcome}:`,
+								tokenError,
+							);
+							orderBookInfo += `• **${token.outcome}**: Error fetching prices\n`;
+						}
 					}
 				}
 			} catch (orderBookError) {
-				console.log("⚠️ Could not fetch order book:", orderBookError);
+				console.log("⚠️ Could not fetch order books:", orderBookError);
+				orderBookInfo = "\n⚠️ Could not fetch current prices";
 			}
 
 			return `✅ **Market Details for Trading**
@@ -936,17 +992,19 @@ export const prepareOrderTool = {
 			.max(0.999)
 			.describe("Price per share (0.001 to 0.999)"),
 		size: z.number().min(1).describe("Number of shares"),
-		tokenId: z
+		outcome: z
 			.string()
 			.optional()
-			.describe("Token ID (required for sell orders)"),
+			.describe(
+				"Outcome name (e.g., 'Yes', 'No', 'Up', 'Down') - required for sell orders",
+			),
 	}),
 	execute: async (params: {
 		marketId: string;
 		side: "BUY" | "SELL";
 		price: number;
 		size: number;
-		tokenId?: string;
+		outcome?: string;
 	}) => {
 		const polymarketService = new PolymarketService();
 
@@ -955,6 +1013,13 @@ export const prepareOrderTool = {
 		}
 
 		try {
+			// Get raw market data to access token IDs
+			const rawMarketData = await polymarketService.getRawMarket(
+				params.marketId,
+			);
+			const market = rawMarketData.market;
+			const tokens = rawMarketData.tokens;
+
 			const orderValue = params.price * params.size;
 
 			if (params.side === "BUY") {
@@ -965,7 +1030,7 @@ export const prepareOrderTool = {
 					🛒 **Buy Order Preparation**
 					
 					📊 **Order Details:**
-					🎯 Market: ${params.marketId}
+					🎯 Market: ${market.question}
 					💰 Price: $${params.price.toFixed(3)} per share
 					📈 Size: ${params.size} shares
 					💵 Total Value: $${orderValue.toFixed(2)}
@@ -982,13 +1047,26 @@ export const prepareOrderTool = {
 					}
 				`;
 			}
+
 			// SELL order
-			if (!params.tokenId) {
-				return "❌ Token ID is required for sell orders. Please provide the tokenId parameter.";
+			if (!params.outcome) {
+				const availableOutcomes = tokens
+					.map((t) => `"${t.outcome}"`)
+					.join(", ");
+				return `❌ Outcome is required for sell orders. Available outcomes: ${availableOutcomes}. Please specify which outcome you want to sell.`;
+			}
+
+			// Find the token ID for the specified outcome
+			const token = tokens.find((t) => t.outcome === params.outcome);
+			if (!token) {
+				const availableOutcomes = tokens
+					.map((t) => `"${t.outcome}"`)
+					.join(", ");
+				return `❌ Invalid outcome "${params.outcome}". Available outcomes: ${availableOutcomes}`;
 			}
 
 			const requirements = await polymarketService.checkSellOrderRequirements(
-				params.tokenId,
+				token.token_id,
 				params.size,
 			);
 
@@ -996,8 +1074,9 @@ export const prepareOrderTool = {
 					💎 **Sell Order Preparation**
 					
 					📊 **Order Details:**
-					🎯 Market: ${params.marketId}
-					🏷️ Token: ${params.tokenId}
+					🎯 Market: ${market.question}
+					🏷️ Outcome: ${params.outcome}
+					🔑 Token ID: ${token.token_id}
 					💰 Price: $${params.price.toFixed(3)} per share
 					📉 Size: ${params.size} shares
 					💵 Total Value: $${orderValue.toFixed(2)}

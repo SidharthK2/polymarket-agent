@@ -908,6 +908,46 @@ export class PolymarketService {
 	}
 
 	/**
+	 * Get raw market data including token IDs (uses CLOB)
+	 */
+	async getRawMarket(conditionId: string): Promise<{
+		market: Market;
+		tokens: Array<{ token_id: string; outcome: string }>;
+	}> {
+		await this.ensureInitialized();
+
+		if (!this.clobClient) {
+			throw new Error("CLOB client not initialized");
+		}
+
+		try {
+			const market = await this.clobClient.getMarket(conditionId);
+			const rawMarket = marketSchema.parse(market);
+
+			// Convert CLOB API response to Market format
+			const processedMarket = {
+				id: rawMarket.condition_id,
+				question: rawMarket.question,
+				description: "",
+				endDate: rawMarket.end_date_iso || "",
+				outcomes: rawMarket.tokens.map((t) => t.outcome),
+				eventId: rawMarket.question_id || "",
+				eventTitle: "",
+				category: "",
+				conditionId: rawMarket.condition_id,
+			};
+
+			return {
+				market: processedMarket,
+				tokens: rawMarket.tokens,
+			};
+		} catch (error) {
+			console.error("Error fetching raw market:", error);
+			throw error;
+		}
+	}
+
+	/**
 	 * Get order book for a specific token (uses CLOB)
 	 */
 	async getOrderBook(tokenId: string): Promise<OrderBook> {
@@ -1173,6 +1213,30 @@ export class PolymarketService {
 	 */
 	getWalletAddress(): string | null {
 		return this.wallet?.address || null;
+	}
+
+	/**
+	 * Get token holders from Polymarket Data API
+	 * This uses the REST API, not CLOB, so works without authentication
+	 */
+	async getTokenHolders(tokenId: string) {
+		try {
+			const url = `https://data-api.polymarket.com/holders?token=${tokenId}`;
+			console.log(`🔍 Fetching token holders from: ${url}`);
+
+			const response = await fetch(url);
+			if (!response.ok) {
+				throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+			}
+
+			const data = await response.json();
+			console.log(`✅ Fetched token holders data`);
+
+			return data;
+		} catch (error) {
+			console.error("❌ Error fetching token holders:", error);
+			throw error;
+		}
 	}
 
 	/**

@@ -19,17 +19,21 @@ export async function createSelectMarketForTradingAgent(tools: BaseTool[]) {
     CRITICAL: The conversation context contains the market ID. DO NOT ask for it again.
 
     LOOK FOR THESE PATTERNS in the conversation:
-    - "Market ID: 578103"  
-    - "market ID: 578156"
-    - Any number after "Market ID"
+    - "Market ID: 0x80bff859c0a74a8e4b69bf6f565db47637aa092ab9ae9522f23627fd1a11a7aa" (conditionId format)
+    - "Market ID: 578103" (old format)
+    - "market ID: 578156" (old format)
+    - Any ID after "Market ID" (both 0x... and numeric formats)
 
     WHEN YOU SEE A MARKET ID:
     1. IMMEDIATELY use SELECT_MARKET_FOR_TRADING tool with that marketId
     2. DO NOT ask the user to provide the Market ID again
-    3. Extract the number and use it directly
+    3. Extract the ID and use it directly (both conditionId and old numeric formats work)
 
-    EXAMPLE: If you see "Market ID: 578156" in the conversation:
-    → Call SELECT_MARKET_FOR_TRADING with marketId="578156"
+    EXAMPLES: 
+    - If you see "Market ID: 0x80bff859c0a74a8e4b69bf6f565db47637aa092ab9ae9522f23627fd1a11a7aa":
+      → Call SELECT_MARKET_FOR_TRADING with marketId="0x80bff859c0a74a8e4b69bf6f565db47637aa092ab9ae9522f23627fd1a11a7aa"
+    - If you see "Market ID: 578156":
+      → Call SELECT_MARKET_FOR_TRADING with marketId="578156"
 
     The user has already provided the market ID through the coordinator - use it!
 
