@@ -153,7 +153,7 @@ export async function createInterestProfilerAgent() {
 		},
 
 		// Add runAsync for compatibility
-		runAsync: async function* (params: any) {
+		runAsync: async function* (params: { newMessage: { content: string } }) {
 			const result = await runner.ask(params.newMessage?.content || "");
 			yield { type: "response", content: result };
 		},

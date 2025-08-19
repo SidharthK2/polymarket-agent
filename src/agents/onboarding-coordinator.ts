@@ -1,9 +1,7 @@
-// Fixed version of onboarding-coordinator.ts with proper ADK schemas
 import { AgentBuilder, createTool } from "@iqai/adk";
 import { z } from "zod";
 import { env } from "../env";
 
-// Import the parseMarketsFromResponse function
 function parseMarketsFromResponse(response: string): Market[] {
 	const markets: Market[] = [];
 
@@ -61,15 +59,6 @@ function parseMarketsFromResponse(response: string): Market[] {
 	return markets;
 }
 
-/**
- * FIXED: ADK createTool Implementation with Proper Schemas
- *
- * The build errors demonstrate a critical framework tradeoff:
- * - ADK requires explicit Zod schemas for typed tool parameters
- * - This provides runtime type safety but increases verbosity
- * - Breaking changes between framework versions impact developer experience
- */
-
 type AgentRunner = {
 	ask: (message: string) => Promise<string>;
 };
@@ -98,14 +87,12 @@ interface UserProfile {
 export async function createOnboardingCoordinator(subAgents: {
 	interestProfiler: AgentRunner;
 	marketRecommender: AgentRunner;
-	selectMarketForTrading: AgentRunner;
+	tradingAgent: AgentRunner;
 }) {
-	// FIXED: Added explicit Zod schema for userInput parameter
 	const profileUserInterestsTool = createTool({
 		name: "profile_user_interests",
 		description:
 			"Discover and analyze user interests for personalized market recommendations",
-		// ✅ REQUIRED: Explicit schema for typed parameters
 		schema: z.object({
 			userInput: z
 				.string()
@@ -117,7 +104,6 @@ export async function createOnboardingCoordinator(subAgents: {
 					`Analyze user interests from: "${args.userInput}". Extract interests as a simple array.`,
 				);
 
-				// Parse interests from response
 				const interestMatch = response.match(/\[(.*?)\]/);
 				if (interestMatch) {
 					const interests = interestMatch[1]
@@ -125,7 +111,6 @@ export async function createOnboardingCoordinator(subAgents: {
 						.map((i: string) => i.trim().replace(/['"]/g, ""))
 						.filter((i) => i.length > 0);
 
-					// Store user profile in ADK session state
 					const userProfile: UserProfile = {
 						interests,
 						knowledgeLevel: "intermediate",
@@ -154,19 +139,16 @@ export async function createOnboardingCoordinator(subAgents: {
 		}),
 		fn: async (args: { query?: string }, context) => {
 			try {
-				// Get user profile from ADK state
 				const userProfile = (await context.state.get("profile")) as UserProfile;
 				const searchQuery =
 					args.query || userProfile?.interests?.join(" ") || "popular markets";
 
-				// Get the response from market recommender
 				const response = await subAgents.marketRecommender.ask(
 					`Find markets for query: "${searchQuery}". User profile: ${JSON.stringify(userProfile)}. Limit: 8. Ensure conditionIds are included.`,
 				);
 
 				console.log("response", response);
 
-				// Parse markets from the response and store them
 				const markets = parseMarketsFromResponse(response);
 				console.log("parsed markets", markets);
 				context.state.set("availableMarkets", markets);
@@ -222,7 +204,7 @@ export async function createOnboardingCoordinator(subAgents: {
 				}
 
 				// Get detailed trading information
-				const response = await subAgents.selectMarketForTrading.ask(
+				const response = await subAgents.tradingAgent.ask(
 					`Get trading details for market with conditionId: ${market.conditionId}. ` +
 						`Market question: "${market.question}". ` +
 						`Available outcomes: ${market.outcomes.join(", ")}.`,
@@ -242,17 +224,14 @@ export async function createOnboardingCoordinator(subAgents: {
 		},
 	});
 
-	/// FIXED: Added explicit Zod schema for action parameter
 	const executeTradingActionTool = createTool({
 		name: "execute_trading_action",
 		description: "Execute trading operations on the selected market",
-		// ✅ REQUIRED: Explicit schema for action
 		schema: z.object({
 			action: z.string().describe("Trading action to perform"),
 		}),
 		fn: async (args: { action: string }, context) => {
 			try {
-				// Get selected market from ADK state (not availableMarkets)
 				const selectedMarket = (await context.state.get(
 					"selectedMarket",
 				)) as Market;
@@ -265,8 +244,7 @@ export async function createOnboardingCoordinator(subAgents: {
 					return "❌ Selected market not available for trading.";
 				}
 
-				// Execute trading action
-				const response = await subAgents.selectMarketForTrading.ask(
+				const response = await subAgents.tradingAgent.ask(
 					`Execute trading action: "${args.action}" ` +
 						`on market: "${selectedMarket.question}" ` +
 						`with conditionId: ${selectedMarket.conditionId}. ` +

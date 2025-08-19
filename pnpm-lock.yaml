@@ -23,6 +23,9 @@ importers:
       dotenv:
         specifier: ^17.2.0
         version: 17.2.1
+      kysely:
+        specifier: ^0.28.5
+        version: 0.28.5
       uuid:
         specifier: ^11.1.0
         version: 11.1.0
@@ -1699,8 +1702,8 @@ packages:
   jws@4.0.0:
     resolution: {integrity: sha512-KDncfTmOZoOMTFG4mBlG0qUIOlc03fmzH+ru6RgYVZhPkyiy/92Owlt/8UEN+a4TXR1FQetfIpJE8ApdvdVxTg==}
 
-  kysely@0.28.4:
-    resolution: {integrity: sha512-pfQj8/Bo3KSzC1HIZB5MeeYRWcDmx1ZZv8H25LsyeygqXE+gfsbUAgPT1GSYZFctB1cdOVlv+OifuCls2mQSnw==}
+  kysely@0.28.5:
+    resolution: {integrity: sha512-rlB0I/c6FBDWPcQoDtkxi9zIvpmnV5xoIalfCMSMCa7nuA6VGA3F54TW9mEgX4DVf10sXAWCF5fDbamI/5ZpKA==}
     engines: {node: '>=20.0.0'}
 
   lodash.camelcase@4.3.0:
@@ -2597,9 +2600,9 @@ snapshots:
       dedent: 1.6.0
       dockerode: 4.0.7
       dotenv: 16.6.1
-      drizzle-orm: 0.43.1(@electric-sql/pglite@0.3.7)(@opentelemetry/api@1.9.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.15.4)(better-sqlite3@12.2.0)(kysely@0.28.4)
+      drizzle-orm: 0.43.1(@electric-sql/pglite@0.3.7)(@opentelemetry/api@1.9.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.15.4)(better-sqlite3@12.2.0)(kysely@0.28.5)
       express: 4.21.2
-      kysely: 0.28.4
+      kysely: 0.28.5
       openai: 4.104.0(ws@8.18.3)(zod@3.25.76)
       socket.io: 4.8.1
       ts-node: 10.9.2(@types/node@22.17.1)(typescript@5.9.2)
@@ -3828,14 +3831,14 @@ snapshots:
 
   dotenv@17.2.1: {}
 
-  drizzle-orm@0.43.1(@electric-sql/pglite@0.3.7)(@opentelemetry/api@1.9.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.15.4)(better-sqlite3@12.2.0)(kysely@0.28.4):
+  drizzle-orm@0.43.1(@electric-sql/pglite@0.3.7)(@opentelemetry/api@1.9.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.15.4)(better-sqlite3@12.2.0)(kysely@0.28.5):
     optionalDependencies:
       '@electric-sql/pglite': 0.3.7
       '@opentelemetry/api': 1.9.0
       '@types/better-sqlite3': 7.6.13
       '@types/pg': 8.15.4
       better-sqlite3: 12.2.0
-      kysely: 0.28.4
+      kysely: 0.28.5
 
   dunder-proto@1.0.1:
     dependencies:
@@ -4298,7 +4301,7 @@ snapshots:
       jwa: 2.0.1
       safe-buffer: 5.2.1
 
-  kysely@0.28.4: {}
+  kysely@0.28.5: {}
 
   lodash.camelcase@4.3.0: {}
 

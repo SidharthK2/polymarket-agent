@@ -336,7 +336,6 @@ export const getMarketsTool = {
 		try {
 			const markets = await polymarketService.searchMarketsEnhanced("", {
 				limit: params.limit,
-				useGammaAPI: true,
 			});
 
 			if (markets.length === 0) {

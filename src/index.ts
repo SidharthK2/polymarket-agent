@@ -1,6 +1,6 @@
 import { env } from "./env";
 import { McpTelegram, McpToolset, createSamplingHandler } from "@iqai/adk";
-import type { LlmRequest, McpConfig } from "@iqai/adk";
+import type { McpConfig } from "@iqai/adk";
 import * as dotenv from "dotenv";
 import { createOnboardingCoordinator } from "./agents/onboarding-coordinator";
 import { createInterestProfilerAgent } from "./agents/interest-profiler-agent";
@@ -18,16 +18,7 @@ dotenv.config();
 async function main() {
 	console.log("🤖 Initializing Polymarket Multi-Agent System...");
 
-	// Validate required environment variables
-	if (!env.TELEGRAM_BOT_TOKEN) {
-		console.error(
-			"❌ TELEGRAM_BOT_TOKEN is required. Please set it in your .env file.",
-		);
-		process.exit(1);
-	}
-
 	try {
-		// Initialize CoinGecko MCP server
 		const cgConfig: McpConfig = {
 			name: "CoinGecko MCP Client",
 			description: "Client for CoinGecko API via MCP",
@@ -53,7 +44,6 @@ async function main() {
 		const cgToolset = new McpToolset(cgConfig);
 		const cgTools = await cgToolset.getTools();
 
-		// Initialize Polymarket MCP server
 		const polymarketConfig: McpConfig = {
 			name: "Polymarket MCP Client",
 			description: "Client for Polymarket prediction markets via MCP",
@@ -68,7 +58,7 @@ async function main() {
 				],
 				env: {
 					PATH: env.PATH || "",
-					PRIVATE_KEY: process.env.PRIVATE_KEY || "",
+					PRIVATE_KEY: env.PRIVATE_KEY || "",
 					CLOB_API_KEY: process.env.CLOB_API_KEY || "",
 					CLOB_SECRET: process.env.CLOB_SECRET || "",
 					CLOB_PASS_PHRASE: process.env.CLOB_PASS_PHRASE || "",
@@ -117,7 +107,7 @@ async function main() {
 		const coordinatorRunner = await createOnboardingCoordinator({
 			interestProfiler,
 			marketRecommender,
-			selectMarketForTrading: tradingAgent,
+			tradingAgent,
 		});
 
 		// Wrap coordinator for Telegram integration
