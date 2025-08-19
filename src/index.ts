@@ -6,6 +6,8 @@ import { createOnboardingCoordinator } from "./agents/onboarding-coordinator";
 import { createInterestProfilerAgent } from "./agents/interest-profiler-agent";
 import { createMarketRecommenderAgent } from "./agents/market-recommender-agent";
 import { createSelectMarketForTradingAgent } from "./agents/trading-agent";
+import path from "node:path";
+import fs from "node:fs";
 
 dotenv.config();
 
@@ -53,7 +55,6 @@ async function main() {
 	const cgToolset = new McpToolset(cgConfig);
 	const cgTools = await cgToolset.getTools();
 
-	// Start Polymarket MCP server
 	const polymarketConfig: McpConfig = {
 		name: "Polymarket MCP Client",
 		description: "Client for Polymarket prediction markets via MCP",
@@ -140,6 +141,13 @@ async function keepAlive(
 	setInterval(() => {
 		// This keeps the event loop active
 	}, 1000);
+}
+function getSqliteConnectionString(dbName: string): string {
+	const dbPath = path.join(__dirname, "data", `${dbName}.db`);
+	if (!fs.existsSync(path.dirname(dbPath))) {
+		fs.mkdirSync(path.dirname(dbPath), { recursive: true });
+	}
+	return `sqlite://${dbPath}`;
 }
 
 main().catch(console.error);
