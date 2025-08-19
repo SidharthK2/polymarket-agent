@@ -21,24 +21,41 @@ const rewardsSchema = z.object({
 
 // Market schema matching actual CLOB API response
 const marketSchema = z.object({
-	condition_id: z.string(), // Primary market ID
+	condition_id: z.string(), // Primary clob market ID
 	question_id: z.string().optional(),
 	question: z.string(),
+	description: z.string().optional(),
 	tokens: z.array(tokenSchema),
-	rewards: rewardsSchema.optional(),
-	minimum_order_size: z.union([z.string(), z.number()]).optional(), // Can be string or number
-	minimum_tick_size: z.union([z.string(), z.number()]).optional(), // Can be string or number
-	category: z.string().optional(),
+	rewards: z
+		.object({
+			rates: z.array(z.any()).nullable().optional(),
+			min_size: z.number().optional(),
+			max_spread: z.number().optional(),
+		})
+		.optional(),
+	minimum_order_size: z.union([z.string(), z.number()]).optional(),
+	minimum_tick_size: z.union([z.string(), z.number()]).optional(),
 	end_date_iso: z.string().optional(),
-	game_start_time: z.union([z.string(), z.null()]).optional(), // Can be string or null
+	game_start_time: z.union([z.string(), z.null()]).optional(),
 	market_slug: z.string().optional(),
-	min_incentive_size: z.string().optional(),
-	max_incentive_spread: z.string().optional(),
+	enable_order_book: z.boolean().optional(),
 	active: z.boolean().optional(),
 	closed: z.boolean().optional(),
+	archived: z.boolean().optional(),
+	accepting_orders: z.boolean().optional(),
+	accepting_order_timestamp: z.string().optional(),
 	seconds_delay: z.number().optional(),
 	icon: z.string().optional(),
+	image: z.string().optional(),
 	fpmm: z.string().optional(),
+	maker_base_fee: z.number().optional(),
+	taker_base_fee: z.number().optional(),
+	notifications_enabled: z.boolean().optional(),
+	neg_risk: z.boolean().optional(),
+	neg_risk_market_id: z.string().optional(),
+	neg_risk_request_id: z.string().optional(),
+	is_50_50_outcome: z.boolean().optional(),
+	tags: z.array(z.string()).optional(),
 });
 
 const orderBookSchema = z.object({
@@ -58,6 +75,7 @@ const orderBookSchema = z.object({
 
 export interface Market {
 	id: string;
+	conditionId: string;
 	question: string;
 	description?: string;
 	endDate?: string;
@@ -65,7 +83,6 @@ export interface Market {
 	eventId?: string;
 	eventTitle?: string;
 	category?: string;
-	conditionId?: string;
 	volume24hr?: number;
 	liquidity?: number;
 	relevanceScore?: number;
@@ -339,8 +356,8 @@ export class PolymarketService {
 					cutoffDate.getDate() - PolymarketService.RECENT_MARKETS_DAYS,
 				);
 
-				const recentMarkets = marketData.filter((market: any) => {
-					const endDate = market.end_date_iso || market.endDate;
+				const recentMarkets = marketData.filter((market: RawMarket) => {
+					const endDate = market.end_date_iso;
 					if (!endDate) return false;
 
 					const marketEndDate = new Date(endDate);
@@ -359,15 +376,14 @@ export class PolymarketService {
 					try {
 						const rawMarket = marketSchema.parse(market);
 						processedMarkets.push({
-							id: rawMarket.condition_id,
+							id: rawMarket.condition_id, // Use condition_id as id since CLOB API doesn't provide separate id
+							conditionId: rawMarket.condition_id,
 							question: rawMarket.question,
-							description: "",
 							endDate: rawMarket.end_date_iso || "",
 							outcomes: rawMarket.tokens.map((t) => t.outcome),
 							eventId: rawMarket.question_id || "",
 							eventTitle: "",
 							category: "",
-							conditionId: rawMarket.condition_id,
 						});
 					} catch (error) {
 						console.log("⚠️ Market validation failed, skipping market");
@@ -508,6 +524,7 @@ export class PolymarketService {
 				const data = await response.json();
 
 				const markets = Array.isArray(data) ? data : [];
+				console.log("markets from gamma", markets);
 
 				return markets.map((market) => ({
 					id: market.id,
@@ -639,7 +656,7 @@ export class PolymarketService {
 				const marketAny = market as Record<string, unknown>;
 
 				// Extract events array with proper typing
-				const events = (marketAny.events as any[]) || [];
+				const events = (marketAny.events as Record<string, unknown>[]) || [];
 				const firstEvent = events[0] || {};
 
 				const marketData = {
@@ -656,8 +673,8 @@ export class PolymarketService {
 							? JSON.parse(marketAny.outcomes as string)
 							: ["Yes", "No"],
 					eventId: (marketAny.questionID as string) || "",
-					eventTitle: firstEvent.title || "",
-					category: firstEvent.ticker || "",
+					eventTitle: (firstEvent.title as string) || "",
+					category: (firstEvent.ticker as string) || "",
 					conditionId: (marketAny.conditionId as string) || "",
 					clobTokenIds: marketAny.clobTokenIds as string,
 				};
@@ -715,7 +732,6 @@ export class PolymarketService {
 				.map((market) => ({
 					id: market.id,
 					question: market.question,
-					description: market.description,
 					endDate: market.endDate,
 					outcomes: market.outcomes,
 					eventId: market.eventId,
@@ -792,7 +808,8 @@ export class PolymarketService {
 				allResults.push(
 					...results.map((r) => ({
 						...r,
-						relevanceScore: (r as any).relevanceScore || 0,
+						relevanceScore:
+							(r as Market & { relevanceScore?: number }).relevanceScore || 0,
 					})),
 				);
 			} catch (error) {
@@ -1036,6 +1053,8 @@ export class PolymarketService {
 
 		try {
 			const market = await this.clobClient.getMarket(conditionId);
+			console.log("🔍 CLOB API response for conditionId:", conditionId);
+			console.log("🔍 Raw market response:", JSON.stringify(market, null, 2));
 
 			// Check if the response contains an error before parsing
 			if (market && typeof market === "object" && "error" in market) {
@@ -1044,6 +1063,7 @@ export class PolymarketService {
 				);
 			}
 
+			console.log("🔍 Attempting to parse with marketSchema...");
 			const rawMarket = marketSchema.parse(market);
 			// Convert CLOB API response to Market format
 			return {
@@ -1078,6 +1098,14 @@ export class PolymarketService {
 
 		try {
 			const market = await this.clobClient.getMarket(conditionId);
+			console.log(
+				"🔍 getRawMarket - CLOB API response for conditionId:",
+				conditionId,
+			);
+			console.log(
+				"🔍 getRawMarket - Raw market response:",
+				JSON.stringify(market, null, 2),
+			);
 
 			// Check if the response contains an error before parsing
 			if (market && typeof market === "object" && "error" in market) {
@@ -1086,13 +1114,14 @@ export class PolymarketService {
 				);
 			}
 
+			console.log("🔍 getRawMarket - Attempting to parse with marketSchema...");
 			const rawMarket = marketSchema.parse(market);
 
 			// Convert CLOB API response to Market format
 			const processedMarket = {
-				id: rawMarket.condition_id,
+				id: rawMarket.condition_id, // Use condition_id as id since CLOB API doesn't provide separate id
 				question: rawMarket.question,
-				description: "",
+				description: rawMarket.description || "",
 				endDate: rawMarket.end_date_iso || "",
 				outcomes: rawMarket.tokens.map((t) => t.outcome),
 				eventId: rawMarket.question_id || "",
@@ -1231,6 +1260,7 @@ export class PolymarketService {
 		if (!this.clobClient || !this.wallet) {
 			throw new Error("CLOB client or wallet not initialized");
 		}
+		console.log("🔍 Creating buy order for tokenId:", tokenId);
 
 		// Enhanced validation unless explicitly skipped
 		if (!options.skipValidation) {
@@ -1238,6 +1268,10 @@ export class PolymarketService {
 			const requirements = await this.checkBuyOrderRequirements(orderValue);
 
 			if (!requirements.canPlace) {
+				console.log(
+					"❌ Order validation failed for requirements:",
+					requirements,
+				);
 				return {
 					success: false,
 					error: requirements.error || "Order validation failed",

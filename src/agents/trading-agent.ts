@@ -56,7 +56,7 @@ export async function createTradingAgent(tools: BaseTool[]) {
 			4. Use structured responses for programmatic handling
 
 			AVAILABLE OPERATIONS:
-			- SELECT_MARKET_FOR_TRADING: Get detailed market info by conditionId
+			- IMPORTANT: SELECT_MARKET_FOR_TRADING: Get detailed market info by conditionId only not id or marketId
 			- GET_POLYMARKET_ORDERBOOK: Check current prices
 			- PREPARE_ORDER_FOR_MARKET: Calculate order requirements
 			- CHECK_BUY_ORDER_REQUIREMENTS: Validate balance for buy orders

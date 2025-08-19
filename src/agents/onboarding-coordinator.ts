@@ -7,8 +7,8 @@ import { env } from "../env";
 function parseMarketsFromResponse(response: string): Market[] {
 	const markets: Market[] = [];
 
-	// Split by market entries (look for numbered lists)
-	const marketBlocks = response.split(/\n\d+\.\s+/);
+	// Split by market entries (look for 🆔 Market ID: pattern)
+	const marketBlocks = response.split(/(?=🆔 Market ID:)/);
 
 	for (const block of marketBlocks) {
 		if (!block.trim()) continue;
@@ -18,21 +18,22 @@ function parseMarketsFromResponse(response: string): Market[] {
 			const idMatch = block.match(/(?:Market ID|ID):\s*([0-9a-fx]+)/i);
 			const id = idMatch?.[1]?.trim() || "";
 
-			// Extract conditionId
-			const conditionIdMatch = block.match(/(?:Condition ID):\s*([0-9a-fx]+)/i);
+			// Extract conditionId (look for IMPORTANT: Condition ID: pattern)
+			const conditionIdMatch = block.match(
+				/IMPORTANT:\s*Condition ID:\s*([0-9a-fx]+)/i,
+			);
 			const conditionId = conditionIdMatch?.[1]?.trim() || "";
 
-			// Extract question (it's on the first line of the block, remove any leading number)
-			const questionMatch = block.match(/^(.+?)(?:\n|$)/);
-			const question =
-				questionMatch?.[1]?.trim().replace(/^\d+\.\s*/, "") || "";
+			// Extract question (look for **Question:** pattern)
+			const questionMatch = block.match(/\*\*Question:\*\*\s*([^\n]+)/i);
+			const question = questionMatch?.[1]?.trim() || "";
 
-			// Extract end date
-			const endDateMatch = block.match(/(?:End Date|Ends):\s*([^\n]+)/i);
+			// Extract end date (look for **End Date:** pattern)
+			const endDateMatch = block.match(/\*\*End Date:\*\*\s*([^\n]+)/i);
 			const endDate = endDateMatch?.[1]?.trim() || "";
 
-			// Extract category (look for 🏷️ emoji)
-			const categoryMatch = block.match(/🏷️\s*([^\n]+)/i);
+			// Extract category (look for **Category:** pattern)
+			const categoryMatch = block.match(/\*\*Category:\*\*\s*([^\n]+)/i);
 			const category = categoryMatch?.[1]?.trim() || "";
 
 			// Extract volume
@@ -163,8 +164,11 @@ export async function createOnboardingCoordinator(subAgents: {
 					`Find markets for query: "${searchQuery}". User profile: ${JSON.stringify(userProfile)}. Limit: 8. Ensure conditionIds are included.`,
 				);
 
+				console.log("response", response);
+
 				// Parse markets from the response and store them
 				const markets = parseMarketsFromResponse(response);
+				console.log("parsed markets", markets);
 				context.state.set("availableMarkets", markets);
 				context.state.set("lastSearchQuery", searchQuery);
 
@@ -180,14 +184,26 @@ export async function createOnboardingCoordinator(subAgents: {
 		name: "select_market_for_trading",
 		description: "Select a specific market and prepare it for trading",
 		schema: z.object({
-			marketId: z.string().describe("Market ID to select"),
+			//use refine to clean any leading and trailing spaces and double stars
+			conditionId: z
+				.string()
+				.describe("Condition ID to select")
+				.refine((id) => {
+					return id
+						.trim()
+						.replace(/^\*\*\s*/, "")
+						.replace(/\s*\*\*$/, "");
+				}),
 		}),
-		fn: async (args: { marketId: string }, context) => {
+		fn: async (args: { conditionId: string }, context) => {
 			try {
 				// Get available markets from ADK state
 				const availableMarkets = (await context.state.get(
 					"availableMarkets",
 				)) as Market[];
+
+				console.debug("args", args);
+				console.debug("availableMarkets from state", availableMarkets);
 
 				// Check if markets are available
 				if (!Array.isArray(availableMarkets)) {
@@ -196,18 +212,13 @@ export async function createOnboardingCoordinator(subAgents: {
 
 				const market = availableMarkets.find(
 					(m) =>
-						m.id === args.marketId ||
-						m.conditionId === args.marketId ||
-						m.id === `** ${args.marketId}` ||
-						m.id.replace(/^\*\*\s*/, "") === args.marketId,
+						m.conditionId === args.conditionId ||
+						m.conditionId === `** ${args.conditionId}` ||
+						m.conditionId.replace(/^\*\*\s*/, "") === args.conditionId,
 				);
 
 				if (!market) {
 					return "❌ Market not found. Please search for markets first or select from the recommended list.";
-				}
-
-				if (!market.conditionId) {
-					return `❌ Market "${market.question}" is not yet available for trading.`;
 				}
 
 				// Get detailed trading information
@@ -216,6 +227,7 @@ export async function createOnboardingCoordinator(subAgents: {
 						`Market question: "${market.question}". ` +
 						`Available outcomes: ${market.outcomes.join(", ")}.`,
 				);
+				console.log(" selected market response", response);
 
 				// Store selected market in ADK state
 				context.state.set("selectedMarket", market);
@@ -284,13 +296,13 @@ export async function createOnboardingCoordinator(subAgents: {
 
 			AVAILABLE TOOLS:
 			1. profile_user_interests - Analyze what users are interested in
-			2. recommend_markets - Find relevant markets based on interests
+			2. recommend_markets - Find and explore relevant markets based on interests
 			3. select_market_for_trading - Prepare a specific market for trading
 			4. execute_trading_action - Handle trading operations
 
 			CONVERSATION FLOW:
 			1. When users mention interests → Use profile_user_interests
-			2. When users want to find markets → Use recommend_markets  
+			2. When users want to find or explore markets → Use recommend_markets  
 			3. When users select a market → Use select_market_for_trading
 			4. When users want to trade → Use execute_trading_action
 

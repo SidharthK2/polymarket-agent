@@ -450,7 +450,7 @@ export const createBuyOrderTool = {
 	name: "CREATE_POLYMARKET_BUY_ORDER",
 	description: "Create a buy order on Polymarket for a specific outcome",
 	parameters: z.object({
-		marketId: z.string().min(1).describe("The market ID to trade"),
+		conditionId: z.string().min(1).describe("The condition ID to trade"),
 		outcome: z
 			.string()
 			.min(1)
@@ -463,7 +463,7 @@ export const createBuyOrderTool = {
 		size: z.number().min(1).describe("Order size (number of shares)"),
 	}),
 	execute: async (params: {
-		marketId: string;
+		conditionId: string;
 		outcome: string;
 		price: number;
 		size: number;
@@ -476,7 +476,7 @@ export const createBuyOrderTool = {
 
 		try {
 			const rawMarketData = await polymarketService.getRawMarket(
-				params.marketId,
+				params.conditionId,
 			);
 			const market = rawMarketData.market;
 			const tokens = rawMarketData.tokens;
@@ -527,7 +527,7 @@ export const createSellOrderTool = {
 	name: "CREATE_POLYMARKET_SELL_ORDER",
 	description: "Create a sell order on Polymarket for a specific outcome",
 	parameters: z.object({
-		marketId: z.string().min(1).describe("The market ID to trade"),
+		conditionId: z.string().min(1).describe("The condition ID to trade"),
 		outcome: z
 			.string()
 			.min(1)
@@ -540,7 +540,7 @@ export const createSellOrderTool = {
 		size: z.number().min(1).describe("Order size (number of shares)"),
 	}),
 	execute: async (params: {
-		marketId: string;
+		conditionId: string;
 		outcome: string;
 		price: number;
 		size: number;
@@ -553,7 +553,7 @@ export const createSellOrderTool = {
 
 		try {
 			const rawMarketData = await polymarketService.getRawMarket(
-				params.marketId,
+				params.conditionId,
 			);
 			const market = rawMarketData.market;
 			const tokens = rawMarketData.tokens;
