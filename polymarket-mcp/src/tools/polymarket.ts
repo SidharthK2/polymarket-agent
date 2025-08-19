@@ -13,6 +13,9 @@ type Market = {
 	eventTitle?: string;
 	category?: string;
 	conditionId?: string;
+	volume24hr?: number;
+	liquidity?: number;
+	relevanceScore?: number;
 };
 
 /**
@@ -298,11 +301,8 @@ export const searchMarketsByInterestsTool = {
 
 			const enhancedMarkets = markets as Array<
 				Market & {
-					relevanceScore?: number;
 					matchReason?: string;
 					riskLevel?: string;
-					volume24hr?: number;
-					liquidity?: number;
 				}
 			>;
 			const profileMatch =
@@ -331,7 +331,7 @@ export const searchMarketsByInterestsTool = {
 				   💰 Volume: $${market.volume24hr?.toLocaleString() || "N/A"} | Liquidity: $${market.liquidity?.toLocaleString() || "N/A"}
 				   📅 ${market.endDate ? `Ends: ${new Date(market.endDate).toLocaleDateString()}` : "End date TBD"}
 				   🏷️  ${market.category || market.eventTitle || "General"}
-				   🆔 ID: ${market.id}
+				   🆔 *Market ID: ${market.id}*
 				   ${market.description ? `📝 ${market.description.slice(0, 120)}${market.description.length > 120 ? "..." : ""}` : ""}
 				   ${market.matchReason ? `🔍 Why it matches: ${market.matchReason}` : ""}
 			`;
@@ -917,7 +917,7 @@ export const selectMarketTool = {
 			let orderBookInfo = "";
 			try {
 				if (rawMarketData.tokens && rawMarketData.tokens.length > 0) {
-					orderBookInfo = "\n💰 **Current Prices:**\n";
+					orderBookInfo = "\n💰 *Current Prices*:\n";
 
 					for (const token of rawMarketData.tokens) {
 						try {
@@ -928,16 +928,16 @@ export const selectMarketTool = {
 							if (orderBook.bids.length > 0 && orderBook.asks.length > 0) {
 								const bestBid = Number(orderBook.bids[0].price);
 								const bestAsk = Number(orderBook.asks[0].price);
-								orderBookInfo += `• **${token.outcome}**: Bid $${bestBid.toFixed(3)} | Ask $${bestAsk.toFixed(3)}\n`;
+								orderBookInfo += `• ${token.outcome}: Bid $${bestBid.toFixed(3)} | Ask $${bestAsk.toFixed(3)}\n`;
 							} else {
-								orderBookInfo += `• **${token.outcome}**: No active orders\n`;
+								orderBookInfo += `• ${token.outcome}: No active orders\n`;
 							}
 						} catch (tokenError) {
 							console.log(
 								`⚠️ Could not fetch order book for ${token.outcome}:`,
 								tokenError,
 							);
-							orderBookInfo += `• **${token.outcome}**: Error fetching prices\n`;
+							orderBookInfo += `• *${token.outcome}*: Error fetching prices\n`;
 						}
 					}
 				}
@@ -946,22 +946,22 @@ export const selectMarketTool = {
 				orderBookInfo = "\n⚠️ Could not fetch current prices";
 			}
 
-			return `✅ **Market Details for Trading**
-			
-🎯 **Market**: ${market.question}
-🆔 **Market ID**: ${market.id}
-📅 **End Date**: ${market.endDate || "Not specified"}
-🏷️ **Category**: ${market.category || "General"}
+			return `✅ Market Details for Trading
 
-📊 **Outcomes**: ${market.outcomes.join(" | ")}
+🎯 Market: ${market.question}
+🆔 Market ID: ${market.id}
+📅 End Date: ${market.endDate || "Not specified"}
+🏷️ Category: ${market.category || "General"}
+
+📊 Outcomes: ${market.outcomes.join(" | ")}
 ${orderBookInfo}
 
-💡 **Next Steps**:
+💡 Next Steps:
 • Use PREPARE_ORDER_FOR_MARKET to check if you can place orders
 • Use CREATE_POLYMARKET_BUY_ORDER to place buy orders
 • Use CREATE_POLYMARKET_SELL_ORDER to place sell orders
 
-🔗 **Market ID for trading**: ${market.id}`;
+🔗 Market ID for trading: ${market.id}`;
 		} catch (error) {
 			console.error("❌ getMarket failed:", error);
 			const errorMessage =
