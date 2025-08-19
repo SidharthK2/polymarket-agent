@@ -1,143 +1,318 @@
+// Fixed version of onboarding-coordinator.ts with proper ADK schemas
 import { AgentBuilder, createTool } from "@iqai/adk";
+import { z } from "zod";
 import { env } from "../env";
-import z from "zod";
+
+// Import the parseMarketsFromResponse function
+function parseMarketsFromResponse(response: string): Market[] {
+	const markets: Market[] = [];
+
+	// Split by market entries (look for numbered lists)
+	const marketBlocks = response.split(/\n\d+\.\s+/);
+
+	for (const block of marketBlocks) {
+		if (!block.trim()) continue;
+
+		try {
+			// Extract market ID (conditionId)
+			const idMatch = block.match(/(?:Market ID|ID):\s*([0-9a-fx]+)/i);
+			const id = idMatch?.[1]?.trim() || "";
+
+			// Extract conditionId
+			const conditionIdMatch = block.match(/(?:Condition ID):\s*([0-9a-fx]+)/i);
+			const conditionId = conditionIdMatch?.[1]?.trim() || "";
+
+			// Extract question (it's on the first line of the block, remove any leading number)
+			const questionMatch = block.match(/^(.+?)(?:\n|$)/);
+			const question =
+				questionMatch?.[1]?.trim().replace(/^\d+\.\s*/, "") || "";
+
+			// Extract end date
+			const endDateMatch = block.match(/(?:End Date|Ends):\s*([^\n]+)/i);
+			const endDate = endDateMatch?.[1]?.trim() || "";
+
+			// Extract category (look for 🏷️ emoji)
+			const categoryMatch = block.match(/🏷️\s*([^\n]+)/i);
+			const category = categoryMatch?.[1]?.trim() || "";
+
+			// Extract volume
+			const volumeMatch = block.match(/Volume:\s*\$?([\d,]+)/i);
+			const volume24hr = volumeMatch
+				? Number.parseInt(volumeMatch[1].replace(/,/g, ""))
+				: 0;
+
+			if (conditionId && question) {
+				markets.push({
+					id: id,
+					question,
+					conditionId,
+					outcomes: ["Yes", "No"], // Default - could be parsed more sophisticatedly
+					endDate,
+					category,
+					volume24hr,
+				});
+			}
+		} catch (parseError) {
+			console.warn("Failed to parse market block:", block.substring(0, 100));
+		}
+	}
+
+	return markets;
+}
 
 /**
- * Onboarding Coordinator Agent
+ * FIXED: ADK createTool Implementation with Proper Schemas
  *
- * Main orchestrator that guides users through the Polymarket onboarding
- * experience by coordinating with specialized sub-agents.
+ * The build errors demonstrate a critical framework tradeoff:
+ * - ADK requires explicit Zod schemas for typed tool parameters
+ * - This provides runtime type safety but increases verbosity
+ * - Breaking changes between framework versions impact developer experience
  */
-type AgentRunner = Awaited<
-	ReturnType<typeof AgentBuilder.prototype.build>
->["runner"];
+
+type AgentRunner = {
+	ask: (message: string) => Promise<string>;
+};
+
+interface Market {
+	id: string;
+	question: string;
+	description?: string;
+	endDate?: string;
+	outcomes: string[];
+	eventId?: string;
+	eventTitle?: string;
+	category?: string;
+	conditionId: string;
+	volume24hr?: number;
+	liquidity?: number;
+	relevanceScore?: number;
+}
+
+interface UserProfile {
+	interests: string[];
+	knowledgeLevel: "beginner" | "intermediate" | "advanced";
+	riskTolerance: "conservative" | "moderate" | "aggressive";
+}
 
 export async function createOnboardingCoordinator(subAgents: {
 	interestProfiler: AgentRunner;
 	marketRecommender: AgentRunner;
 	selectMarketForTrading: AgentRunner;
 }) {
-	// Create agent tools for delegation using Agent-as-a-Tool pattern
-	const interestProfilerTool = createTool({
+	// FIXED: Added explicit Zod schema for userInput parameter
+	const profileUserInterestsTool = createTool({
 		name: "profile_user_interests",
 		description:
-			"Discover and analyze user interests through specialized conversation to build their market preference profile",
-		/**
-		 * Delegates to the Interest Profiler Agent to discover user preferences
-		 * @param query - Optional specific query about user interests
-		 * @returns Structured user interest profile
-		 */
-		fn: async (args: { query?: string }, context) => {
-			const message = args.query
-				? `Please help profile this user's interests, focusing on: ${args.query}`
-				: "Please help profile this user's interests based on our conversation.";
+			"Discover and analyze user interests for personalized market recommendations",
+		// ✅ REQUIRED: Explicit schema for typed parameters
+		schema: z.object({
+			userInput: z
+				.string()
+				.describe("The user's message about their interests"),
+		}),
+		fn: async (args: { userInput: string }, context) => {
+			try {
+				const response = await subAgents.interestProfiler.ask(
+					`Analyze user interests from: "${args.userInput}". Extract interests as a simple array.`,
+				);
 
-			return await subAgents.interestProfiler.ask(message);
+				// Parse interests from response
+				const interestMatch = response.match(/\[(.*?)\]/);
+				if (interestMatch) {
+					const interests = interestMatch[1]
+						.split(",")
+						.map((i: string) => i.trim().replace(/['"]/g, ""))
+						.filter((i) => i.length > 0);
+
+					// Store user profile in ADK session state
+					const userProfile: UserProfile = {
+						interests,
+						knowledgeLevel: "intermediate",
+						riskTolerance: "moderate",
+					};
+
+					context.state.set("profile", userProfile);
+					context.state.set("interests", interests);
+
+					console.log("✅ Stored user profile:", userProfile);
+				}
+
+				return response;
+			} catch (error) {
+				console.error("❌ Error in profile_user_interests:", error);
+				return "Sorry, I had trouble understanding your interests. Please try again.";
+			}
 		},
 	});
 
-	const marketRecommenderTool = createTool({
+	const recommendMarketsTool = createTool({
 		name: "recommend_markets",
-		description:
-			"Find and recommend relevant Polymarket markets based on user interests and preferences",
-		/**
-		 * Delegates to the Market Recommender Agent to find relevant markets
-		 * @param interests - Specific interests to search for
-		 * @param limit - Maximum number of markets to recommend
-		 * @returns Structured market recommendations with trading options
-		 */
-		fn: async (args: { interests?: string; limit?: number }, context) => {
-			let message = "Please recommend markets based on the user profile.";
+		description: "Find and recommend relevant markets based on user interests",
+		schema: z.object({
+			query: z.string().optional().describe("Search query or topic"),
+		}),
+		fn: async (args: { query?: string }, context) => {
+			try {
+				// Get user profile from ADK state
+				const userProfile = (await context.state.get("profile")) as UserProfile;
+				const searchQuery =
+					args.query || userProfile?.interests?.join(" ") || "popular markets";
 
-			if (args.interests) {
-				message = `Please recommend markets for someone interested in: ${args.interests}`;
-			}
-			if (args.limit) {
-				message += ` Limit to ${args.limit} recommendations.`;
-			}
+				// Get the response from market recommender
+				const response = await subAgents.marketRecommender.ask(
+					`Find markets for query: "${searchQuery}". User profile: ${JSON.stringify(userProfile)}. Limit: 8. Ensure conditionIds are included.`,
+				);
 
-			return await subAgents.marketRecommender.ask(message);
+				// Parse markets from the response and store them
+				const markets = parseMarketsFromResponse(response);
+				context.state.set("availableMarkets", markets);
+				context.state.set("lastSearchQuery", searchQuery);
+
+				return response;
+			} catch (error) {
+				console.error("❌ Error in recommend_markets:", error);
+				return "Sorry, I couldn't find any markets right now. Please try again.";
+			}
 		},
 	});
 
 	const selectMarketForTradingTool = createTool({
 		name: "select_market_for_trading",
-		description:
-			"Get detailed information about a specific market to prepare for trading",
-		fn: async (args, context) => {
-			const message =
-				"Please help the user select and analyze a market for trading. Look for any market ID mentioned in our conversation and use the SELECT_MARKET_FOR_TRADING tool with that ID.";
+		description: "Select a specific market and prepare it for trading",
+		schema: z.object({
+			marketId: z.string().describe("Market ID to select"),
+		}),
+		fn: async (args: { marketId: string }, context) => {
+			try {
+				// Get available markets from ADK state
+				const availableMarkets = (await context.state.get(
+					"availableMarkets",
+				)) as Market[];
 
-			console.log("🔍 Delegating to selectMarketForTrading agent");
-			const result = await subAgents.selectMarketForTrading.ask(message);
-			console.log("📊 Result:", result);
+				// Check if markets are available
+				if (!Array.isArray(availableMarkets)) {
+					return "❌ No markets available. Please search for markets first using 'recommend markets'.";
+				}
 
-			return result;
+				const market = availableMarkets.find(
+					(m) =>
+						m.id === args.marketId ||
+						m.conditionId === args.marketId ||
+						m.id === `** ${args.marketId}` ||
+						m.id.replace(/^\*\*\s*/, "") === args.marketId,
+				);
+
+				if (!market) {
+					return "❌ Market not found. Please search for markets first or select from the recommended list.";
+				}
+
+				if (!market.conditionId) {
+					return `❌ Market "${market.question}" is not yet available for trading.`;
+				}
+
+				// Get detailed trading information
+				const response = await subAgents.selectMarketForTrading.ask(
+					`Get trading details for market with conditionId: ${market.conditionId}. ` +
+						`Market question: "${market.question}". ` +
+						`Available outcomes: ${market.outcomes.join(", ")}.`,
+				);
+
+				// Store selected market in ADK state
+				context.state.set("selectedMarket", market);
+
+				console.log("✅ Selected market for trading:", market.question);
+
+				return response;
+			} catch (error) {
+				console.error("❌ Error in select_market_for_trading:", error);
+				return "❌ Failed to prepare market for trading. Please try again.";
+			}
 		},
 	});
 
-	const tradingActionsTool = createTool({
-		name: "trading_actions",
-		description:
-			"Handle trading-related actions like checking prices, placing orders, and market analysis",
-		fn: async (args: { action?: string }, context) => {
-			const message = args.action
-				? `Please help with this trading action: ${args.action}`
-				: "Please help with trading actions like checking prices, placing orders, or market analysis.";
+	/// FIXED: Added explicit Zod schema for action parameter
+	const executeTradingActionTool = createTool({
+		name: "execute_trading_action",
+		description: "Execute trading operations on the selected market",
+		// ✅ REQUIRED: Explicit schema for action
+		schema: z.object({
+			action: z.string().describe("Trading action to perform"),
+		}),
+		fn: async (args: { action: string }, context) => {
+			try {
+				// Get selected market from ADK state (not availableMarkets)
+				const selectedMarket = (await context.state.get(
+					"selectedMarket",
+				)) as Market;
 
-			console.log(
-				"🔍 Delegating to selectMarketForTrading agent for trading actions",
-			);
-			const result = await subAgents.selectMarketForTrading.ask(message);
-			console.log("📊 Trading Result:", result);
+				if (!selectedMarket) {
+					return "❌ No market selected. Please choose a market first.";
+				}
 
-			return result;
+				if (!selectedMarket.conditionId) {
+					return "❌ Selected market not available for trading.";
+				}
+
+				// Execute trading action
+				const response = await subAgents.selectMarketForTrading.ask(
+					`Execute trading action: "${args.action}" ` +
+						`on market: "${selectedMarket.question}" ` +
+						`with conditionId: ${selectedMarket.conditionId}. ` +
+						`Available outcomes: ${selectedMarket.outcomes.join(", ")}.`,
+				);
+
+				console.log(`✅ Executed trading action: ${args.action}`);
+
+				return response;
+			} catch (error) {
+				console.error("❌ Error in execute_trading_action:", error);
+				return "❌ Trading action failed. Please try again.";
+			}
 		},
 	});
 
+	// Create the main coordinator agent with fixed ADK tools
 	const { runner } = await AgentBuilder.create("onboarding_coordinator")
 		.withDescription(
-			"Guides users through personalized Polymarket onboarding experience",
+			"Guides users through personalized Polymarket onboarding with state management",
 		)
 		.withModel(env.LLM_MODEL)
 		.withInstruction(`
-            You are the Onboarding Coordinator for Polymarket - your goal is to provide a smooth, personalized introduction to prediction markets.
+			You are the Onboarding Coordinator for Polymarket.
 
-            WELCOME FLOW:
-            1. Greet new users warmly
-            2. Briefly explain what you'll help them with
-            3. Ask if they'd like to explore markets based on their interests
+			YOUR GOAL: Guide users through a smooth onboarding experience using available tools.
 
-            SIMPLE COORDINATION:
-            - If user mentions interests (basketball, politics, etc.) → immediately use recommend_markets
-            - Skip profiling unless absolutely necessary
-            - Focus on getting to market recommendations quickly
+			AVAILABLE TOOLS:
+			1. profile_user_interests - Analyze what users are interested in
+			2. recommend_markets - Find relevant markets based on interests
+			3. select_market_for_trading - Prepare a specific market for trading
+			4. execute_trading_action - Handle trading operations
 
-            DELEGATION STRATEGY:
-            - Use sub-agents for their specialties
-            - Coordinate the overall experience
-            - Synthesize information from multiple agents
-            - Keep the conversation flowing naturally
-            
-            TRADING ACTIONS:
-            - When users want to check prices, place orders, or do trading analysis → use trading_actions
-            - The trading agent has access to all Polymarket tools (orderbook, orders, etc.)
-            - Delegate complex trading operations to the trading agent
+			CONVERSATION FLOW:
+			1. When users mention interests → Use profile_user_interests
+			2. When users want to find markets → Use recommend_markets  
+			3. When users select a market → Use select_market_for_trading
+			4. When users want to trade → Use execute_trading_action
 
-            USER EXPERIENCE PRINCIPLES:
-            - Make it feel conversational, not robotic
-            - Personalize based on their responses
-            - Don't overwhelm with too much info at once
-            - Always ask what they'd like to explore next
-            - Be encouraging but realistic about risks
+			CONTEXT AWARENESS:
+			- Remember user interests and preferences
+			- Keep track of available markets from searches
+			- Maintain selected market for trading
+			- Provide helpful next steps
 
-            PERSONALITY: Friendly guide, knowledgeable but not pushy, focused on education and discovery rather than promoting trading.
-        `)
+			PERSONALITY: 
+			- Friendly and helpful guide
+			- Educational but not pushy
+			- Clear about next steps
+			- Handle errors gracefully
+
+			Always use the appropriate tool for each user request and provide clear guidance.
+		`)
 		.withTools(
-			interestProfilerTool,
-			marketRecommenderTool,
+			profileUserInterestsTool,
+			recommendMarketsTool,
 			selectMarketForTradingTool,
-			tradingActionsTool,
+			executeTradingActionTool,
 		)
 		.build();
 

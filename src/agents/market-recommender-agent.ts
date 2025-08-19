@@ -83,8 +83,8 @@ export async function createMarketRecommenderAgent(
 
 			RESPONSE FORMAT:
 			Present top markets with:
-			**Market ID:** [Id]
-			**Condition ID:** [conditionId]
+			🆔 Market ID: [Id]
+			Condition ID: [conditionId]
 			**Question:** [market question]
 			**End Date:** [end date]
 			**Category:** [category]
