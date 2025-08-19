@@ -66,6 +66,9 @@ export interface Market {
 	eventTitle?: string;
 	category?: string;
 	conditionId?: string;
+	volume24hr?: number;
+	liquidity?: number;
+	relevanceScore?: number;
 }
 
 export interface OrderBook {
@@ -111,6 +114,21 @@ interface EnhancedMarket extends Market {
 }
 
 export class PolymarketService {
+	// Configuration constants
+	private static readonly DEFAULT_LIMIT = 8; // Balanced default for good results
+	private static readonly DEFAULT_INTEREST_LIMIT = 6; // Slightly more for interest-based search
+	private static readonly MAX_RESULTS_MULTIPLIER = 1.5; // More conservative multiplier
+	private static readonly MAX_RESULTS_CAP = 40; // Reasonable cap
+	private static readonly MIN_VOLUME_DEFAULT = 0.001; // Very low default - most markets have low volume
+	private static readonly MIN_VOLUME_CONSERVATIVE = 0.5; // Higher volume for conservative
+	private static readonly MIN_VOLUME_MODERATE = 0.1; // Moderate volume threshold
+	private static readonly MIN_VOLUME_AGGRESSIVE = 0.0001; // Extremely low volume for aggressive
+	private static readonly RELEVANCE_SCORE_THRESHOLD = 0.01; // Much lower threshold to catch more markets
+	private static readonly RECENT_MARKETS_DAYS = 60;
+	private static readonly GAMMA_API_RETRY_ATTEMPTS = 2;
+	private static readonly GAMMA_API_RETRY_DELAY = 1000;
+	private static readonly GAMMA_API_DATE_FILTER_DAYS = 45; // Slightly more recent
+
 	private clobClient: ClobClient | null = null;
 	private wallet: Wallet | null = null;
 	private isInitialized = false;
@@ -317,7 +335,9 @@ export class PolymarketService {
 			if (Array.isArray(marketData)) {
 				// Filter for recent markets only
 				const cutoffDate = new Date();
-				cutoffDate.setDate(cutoffDate.getDate() - 60);
+				cutoffDate.setDate(
+					cutoffDate.getDate() - PolymarketService.RECENT_MARKETS_DAYS,
+				);
 
 				const recentMarkets = marketData.filter((market: any) => {
 					const endDate = market.end_date_iso || market.endDate;
@@ -334,10 +354,11 @@ export class PolymarketService {
 					`📊 Filtered from ${marketData.length} to ${recentMarkets.length} recent active markets`,
 				);
 
-				const processedMarkets = recentMarkets.slice(0, limit).map((market) => {
+				const processedMarkets: Market[] = [];
+				for (const market of recentMarkets.slice(0, limit)) {
 					try {
 						const rawMarket = marketSchema.parse(market);
-						return {
+						processedMarkets.push({
 							id: rawMarket.condition_id,
 							question: rawMarket.question,
 							description: "",
@@ -347,12 +368,11 @@ export class PolymarketService {
 							eventTitle: "",
 							category: "",
 							conditionId: rawMarket.condition_id,
-						};
+						});
 					} catch (error) {
-						console.log("⚠️ Market validation failed, using fallback");
-						return this.createFallbackMarket(market);
+						console.log("⚠️ Market validation failed, skipping market");
 					}
-				});
+				}
 
 				return processedMarkets;
 			}
@@ -425,6 +445,7 @@ export class PolymarketService {
 			closed?: boolean;
 			order?: "volume24hr" | "liquidity" | "volume";
 			min_liquidity?: number;
+			volume_num_min?: number;
 			tags?: string[];
 			maxRetries?: number;
 			retryDelay?: number;
@@ -434,11 +455,12 @@ export class PolymarketService {
 			limit = 20,
 			offset = 0,
 			active = true,
-			order = "volume24hr",
-			min_liquidity = 100,
+			order = "volume24hr", // Keep volume as primary sort
+			min_liquidity = 0, // Remove liquidity filtering
+			volume_num_min,
 			tags = [],
-			maxRetries = 2,
-			retryDelay = 1000,
+			maxRetries = PolymarketService.GAMMA_API_RETRY_ATTEMPTS,
+			retryDelay = PolymarketService.GAMMA_API_RETRY_DELAY,
 		} = options;
 
 		for (let attempt = 0; attempt <= maxRetries; attempt++) {
@@ -454,11 +476,17 @@ export class PolymarketService {
 
 				// Enhanced date filtering for current markets
 				const recentDate = new Date();
-				recentDate.setDate(recentDate.getDate() - 30);
+				recentDate.setDate(
+					recentDate.getDate() - PolymarketService.GAMMA_API_DATE_FILTER_DAYS,
+				);
 				params.append("start_date_min", recentDate.toISOString());
 
 				if (tags.length > 0) {
 					params.append("tags", tags.join(","));
+				}
+
+				if (volume_num_min !== undefined) {
+					params.append("volume_num_min", volume_num_min.toString());
 				}
 
 				const url = `https://gamma-api.polymarket.com/markets?${params}`;
@@ -549,14 +577,16 @@ export class PolymarketService {
 			category?: string;
 			sortBy?: string;
 			minLiquidity?: number;
+			minVolume?: number;
 			useGammaAPI?: boolean;
 		} = {},
 	): Promise<Market[]> {
 		const {
-			limit = 10,
+			limit = PolymarketService.DEFAULT_LIMIT,
 			category,
-			sortBy = "relevance",
-			minLiquidity = 500,
+			sortBy = "volume", // Default to volume-based sorting
+			minLiquidity = 0, // Remove liquidity filtering
+			minVolume = PolymarketService.MIN_VOLUME_DEFAULT, // Add volume filtering
 			useGammaAPI = true,
 		} = options;
 
@@ -565,15 +595,21 @@ export class PolymarketService {
 
 			// Use Gamma API only for enhanced data
 			if (useGammaAPI) {
-				const tags = this.extractTagsFromQuery(query);
-				console.log(`🏷️ Using tags for better filtering: ${tags.join(", ")}`);
+				// Don't use tags - Polymarket's tags are broken and return wrong markets
+				console.log(
+					`🔍 Searching without tags (tags are broken on Polymarket)`,
+				);
 
 				const gammaMarkets = await this.getMarketsFromGamma({
-					limit: Math.min(limit * 2, 50),
-					order: sortBy === "popularity" ? "volume24hr" : "volume",
-					min_liquidity: minLiquidity,
+					limit: Math.min(
+						limit * PolymarketService.MAX_RESULTS_MULTIPLIER,
+						PolymarketService.MAX_RESULTS_CAP,
+					),
+					order: "volume24hr", // Always sort by volume for best results
+					min_liquidity: 0, // No liquidity filtering
+					volume_num_min: Math.floor(minVolume * 1000), // Convert to API format (e.g., 0.001 -> 1)
 					active: true,
-					tags,
+					// No tags - they're broken
 				});
 
 				enhancedMarkets = gammaMarkets;
@@ -590,45 +626,68 @@ export class PolymarketService {
 			// Apply relevance scoring directly on Gamma API data
 			const scoredMarkets: EnhancedMarket[] = enhancedMarkets.map((market) => {
 				const marketAny = market as Record<string, unknown>;
-				return {
-					id: (marketAny.conditionId as string) || "",
+
+				// Fix data mapping based on actual Gamma API structure
+				const marketData = {
+					id:
+						(marketAny.conditionId as string) || (marketAny.id as string) || "",
 					question: (marketAny.question as string) || "Unknown Market",
 					description: (marketAny.description as string) || "",
-					endDate: (marketAny.endDate as string) || "",
-					outcomes: (marketAny.outcomes as string[]) || ["Yes", "No"],
+					endDate:
+						(marketAny.endDate as string) ||
+						(marketAny.endDateIso as string) ||
+						"",
+					outcomes: Array.isArray(marketAny.outcomes)
+						? (marketAny.outcomes as string[])
+						: typeof marketAny.outcomes === "string"
+							? JSON.parse(marketAny.outcomes as string)
+							: ["Yes", "No"],
 					eventId: (marketAny.questionID as string) || "",
 					eventTitle: (marketAny.eventTitle as string) || "",
 					category: (marketAny.category as string) || "",
-					conditionId: (marketAny.conditionId as string) || "",
-					relevanceScore: this.calculateRelevanceScore(
-						{
-							id: (marketAny.conditionId as string) || "",
-							question: (marketAny.question as string) || "Unknown Market",
-							description: (marketAny.description as string) || "",
-							endDate: (marketAny.endDate as string) || "",
-							outcomes: (marketAny.outcomes as string[]) || ["Yes", "No"],
-							eventId: (marketAny.questionID as string) || "",
-							eventTitle: (marketAny.eventTitle as string) || "",
-							category: (marketAny.category as string) || "",
-							conditionId: (marketAny.conditionId as string) || "",
-						},
-						query,
-						category,
-					),
-					volume24hr: Number(marketAny.volume24hr || 0),
+					conditionId:
+						(marketAny.conditionId as string) || (marketAny.id as string) || "",
+				};
+
+				const volume24hr = Number(
+					marketAny.volume24hr || marketAny.volume || marketAny.volumeNum || 0,
+				);
+				const relevanceScore = this.calculateRelevanceScore(
+					marketData,
+					query,
+					category,
+				);
+
+				return {
+					...marketData,
+					relevanceScore,
+					volume24hr,
 					liquidity: Number(marketAny.liquidityNum || marketAny.liquidity || 0),
 					popularityScore: this.calculatePopularityScore(market),
 				};
 			});
 
-			// Filter by relevance threshold (temporarily disabled for testing)
+			// Filter by relevance threshold and volume
 			const relevantMarkets = scoredMarkets.filter(
-				(market) => (market.liquidity || 0) >= 0, // Only filter by liquidity
+				(market) =>
+					(market.relevanceScore || 0) >=
+						PolymarketService.RELEVANCE_SCORE_THRESHOLD &&
+					(market.volume24hr || 0) >= minVolume,
 			);
 
 			console.log(
 				`🎯 Found ${scoredMarkets.length} scored markets, ${relevantMarkets.length} passed filters`,
 			);
+
+			// Debug: Show relevance scores for first few markets
+			if (scoredMarkets.length > 0) {
+				console.log("🔍 Debug - Relevance scores for first 3 markets:");
+				scoredMarkets.slice(0, 3).forEach((market, i) => {
+					console.log(
+						`${i + 1}. "${market.question}" - Score: ${market.relevanceScore}`,
+					);
+				});
+			}
 
 			// Sort by strategy
 			const sortedMarkets = this.sortEnhancedMarkets(relevantMarkets, sortBy);
@@ -650,6 +709,9 @@ export class PolymarketService {
 					eventTitle: market.eventTitle,
 					category: market.category,
 					conditionId: market.conditionId,
+					volume24hr: market.volume24hr,
+					liquidity: market.liquidity,
+					relevanceScore: market.relevanceScore,
 				}));
 
 			return finalMarkets;
@@ -677,7 +739,7 @@ export class PolymarketService {
 		} = {},
 	): Promise<Market[]> {
 		const {
-			limit = 10,
+			limit = PolymarketService.DEFAULT_INTEREST_LIMIT,
 			knowledgeLevel = "intermediate",
 			riskTolerance = "moderate",
 			sortBy = "relevance",
@@ -700,15 +762,19 @@ export class PolymarketService {
 		for (const query of searchQueries) {
 			try {
 				const results = await this.searchMarketsEnhanced(query, {
-					limit: Math.min(limit * 2, 50),
-					sortBy,
+					limit: Math.min(
+						limit * PolymarketService.MAX_RESULTS_MULTIPLIER,
+						PolymarketService.MAX_RESULTS_CAP,
+					),
+					sortBy: "volume", // Always sort by volume for best results
 					useGammaAPI: true, // ✅ Gamma API only - no fallback
-					minLiquidity:
+					minLiquidity: 0, // No liquidity filtering
+					minVolume:
 						riskTolerance === "conservative"
-							? 1000
+							? PolymarketService.MIN_VOLUME_CONSERVATIVE
 							: riskTolerance === "moderate"
-								? 500
-								: 100,
+								? PolymarketService.MIN_VOLUME_MODERATE
+								: PolymarketService.MIN_VOLUME_AGGRESSIVE,
 				});
 				allResults.push(
 					...results.map((r) => ({
@@ -718,7 +784,6 @@ export class PolymarketService {
 				);
 			} catch (error) {
 				console.warn(`⚠️ Query "${query}" failed (Gamma API only):`, error);
-				// Continue with other queries - no CLOB fallback
 			}
 		}
 
@@ -781,10 +846,41 @@ export class PolymarketService {
 	): string[] {
 		const queries: string[] = [];
 
-		// Direct interest queries
+		// Direct interest queries (most specific)
 		queries.push(...interests);
 
-		// Add related terms based on knowledge level
+		// Add more specific queries for better results
+		for (const interest of interests) {
+			// Add specific variations for better matching
+			if (interest.toLowerCase().includes("politics")) {
+				queries.push("election", "president", "congress", "policy");
+			}
+			if (interest.toLowerCase().includes("ukraine")) {
+				queries.push("russia", "ceasefire", "war", "conflict");
+			}
+			if (interest.toLowerCase().includes("crypto")) {
+				queries.push("bitcoin", "ethereum", "blockchain");
+			}
+			if (interest.toLowerCase().includes("sports")) {
+				queries.push(
+					"basketball",
+					"football",
+					"baseball",
+					"soccer",
+					"boxing",
+					"ufc",
+					"mma",
+					"golf",
+					"tennis",
+					"manchester",
+					"ryder cup",
+					"championship",
+					"olympics",
+				);
+			}
+		}
+
+		// Add related terms based on knowledge level (only for advanced)
 		if (knowledgeLevel === "advanced") {
 			queries.push(...interests.map((i) => `${i} analysis`));
 		}
@@ -822,6 +918,62 @@ export class PolymarketService {
 		);
 		score += (matchingWords.length / queryWords.length) * 0.5;
 
+		// Special handling for sports terms
+		if (queryLower.includes("sports")) {
+			const sportsTerms = [
+				"boxing",
+				"ufc",
+				"mma",
+				"golf",
+				"tennis",
+				"manchester",
+				"ryder",
+				"championship",
+				"olympics",
+				"basketball",
+				"football",
+				"soccer",
+			];
+			const hasSportsTerm = sportsTerms.some((term) =>
+				questionLower.includes(term),
+			);
+			if (hasSportsTerm) {
+				score += 0.3; // Boost for sports-related markets
+			}
+		}
+
+		// Special handling for politics terms
+		if (queryLower.includes("politics")) {
+			const politicsTerms = [
+				"election",
+				"democratic",
+				"republican",
+				"congress",
+				"senate",
+				"house",
+				"president",
+				"mayor",
+				"governor",
+				"party",
+				"vote",
+				"campaign",
+				"primary",
+				"general",
+				"midterm",
+				"democrat",
+				"republican",
+				"nato",
+				"policy",
+				"government",
+			];
+			const hasPoliticsTerm = politicsTerms.some((term) =>
+				questionLower.includes(term),
+			);
+			if (hasPoliticsTerm) {
+				score += 0.8; // High boost for politics-related markets
+			}
+		}
+
 		return Math.min(score, 1.0);
 	}
 
@@ -857,23 +1009,6 @@ export class PolymarketService {
 			default:
 				return markets.sort((a, b) => b.relevanceScore - a.relevanceScore);
 		}
-	}
-
-	/**
-	 * Create fallback market data when parsing fails
-	 */
-	private createFallbackMarket(market: any): Market {
-		return {
-			id: market.id || "unknown",
-			question: market.question || market.title || "Unknown Market",
-			description: market.description || "",
-			endDate: market.endDate || market.end_date_iso || "",
-			outcomes: market.outcomes || ["Yes", "No"],
-			eventId: market.eventId || "",
-			eventTitle: market.eventTitle || "",
-			category: market.category || "",
-			conditionId: market.conditionId || market.condition_id || "",
-		};
 	}
 
 	/**
