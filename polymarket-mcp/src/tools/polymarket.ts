@@ -2,13 +2,19 @@ import { z } from "zod";
 import { PolymarketService } from "../services/polymarket-service.js";
 import dedent from "dedent";
 
-// Import Market type from service
-type Market = {
+/**
+ * UNIFIED POLYMARKET TOOLS - MCP COMPATIBLE
+ *
+ * Single clean implementation that returns strings for MCP compatibility
+ * while maintaining excellent error handling and user experience.
+ */
+
+interface Market {
 	id: string;
 	question: string;
 	description?: string;
 	endDate?: string;
-	outcomes?: string[];
+	outcomes: string[];
 	eventId?: string;
 	eventTitle?: string;
 	category?: string;
@@ -16,109 +22,10 @@ type Market = {
 	volume24hr?: number;
 	liquidity?: number;
 	relevanceScore?: number;
-};
+}
 
 /**
- * Zod schemas for tool parameters
- */
-const getMarketsParams = z.object({
-	limit: z
-		.number()
-		.min(1)
-		.max(50)
-		.optional()
-		.default(10)
-		.describe("Number of markets to fetch (1-50)"),
-});
-
-const searchMarketsParams = z.object({
-	query: z
-		.string()
-		.min(1)
-		.describe("Search query for market titles/descriptions (keywords)"),
-	limit: z
-		.number()
-		.min(1)
-		.max(50)
-		.optional()
-		.default(10)
-		.describe("Number of markets to return (1-50)"),
-	category: z
-		.string()
-		.optional()
-		.describe("Filter by category (e.g., 'Politics', 'Sports', 'Crypto')"),
-});
-
-const getMarketParams = z.object({
-	conditionId: z
-		.string()
-		.min(1)
-		.describe("The condition ID of the market to fetch"),
-});
-
-const getOrderBookParams = z.object({
-	tokenId: z.string().min(1).describe("The token ID to get order book for"),
-});
-
-const createOrderParams = z.object({
-	marketId: z.string().min(1).describe("The market ID to trade"),
-	outcome: z
-		.string()
-		.min(1)
-		.describe("The outcome to trade (e.g., 'Yes', 'No', 'Up', 'Down')"),
-	price: z
-		.number()
-		.min(0.01)
-		.max(0.99)
-		.describe("Order price between 0.01 and 0.99"),
-	size: z.number().min(1).describe("Order size (number of shares)"),
-});
-
-const getUserPositionsParams = z.object({
-	userAddress: z.string().min(1).describe("The user's Polygon address (0x...)"),
-	limit: z
-		.number()
-		.min(1)
-		.max(500)
-		.optional()
-		.default(20)
-		.describe("Number of positions to fetch (1-500)"),
-	sizeThreshold: z
-		.number()
-		.min(0)
-		.optional()
-		.default(1)
-		.describe("Minimum position size to include"),
-	eventId: z.string().optional().describe("Filter by specific event ID"),
-	redeemable: z
-		.boolean()
-		.optional()
-		.describe("Filter for redeemable positions only"),
-	sortBy: z
-		.enum([
-			"TOKENS",
-			"CURRENT",
-			"INITIAL",
-			"CASHPNL",
-			"PERCENTPNL",
-			"TITLE",
-			"RESOLVING",
-			"PRICE",
-		])
-		.optional()
-		.default("CURRENT")
-		.describe("Sort criteria"),
-});
-
-type GetMarketsParams = z.infer<typeof getMarketsParams>;
-type SearchMarketsParams = z.infer<typeof searchMarketsParams>;
-type GetMarketParams = z.infer<typeof getMarketParams>;
-type GetOrderBookParams = z.infer<typeof getOrderBookParams>;
-type CreateOrderParams = z.infer<typeof createOrderParams>;
-type GetUserPositionsParams = z.infer<typeof getUserPositionsParams>;
-
-/**
- * Tool to search markets by user interests/keywords
+ * Enhanced search with relevance scoring
  */
 export const searchMarketsTool = {
 	name: "SEARCH_POLYMARKET_MARKETS",
@@ -165,7 +72,7 @@ export const searchMarketsTool = {
 		sortBy?: string;
 		minLiquidity?: number;
 		useEnhanced?: boolean;
-	}) => {
+	}): Promise<string> => {
 		const polymarketService = new PolymarketService();
 
 		try {
@@ -215,7 +122,8 @@ export const searchMarketsTool = {
 				   💰 Volume: $${market.volume24hr?.toLocaleString() || "N/A"} | Liquidity: $${market.liquidity?.toLocaleString() || "N/A"}
 				   📅 ${market.endDate ? `Ends: ${new Date(market.endDate).toLocaleDateString()}` : "End date TBD"}
 				   🏷️  ${market.category || market.eventTitle || "General"}
-				   🆔 ID: ${market.id}
+				   🆔 Market ID: ${market.id}
+				   Condition ID: ${market.conditionId}
 				   ${market.description ? `📝 ${market.description.slice(0, 120)}${market.description.length > 120 ? "..." : ""}` : ""}
 			`,
 					)
@@ -231,7 +139,7 @@ export const searchMarketsTool = {
 } as const;
 
 /**
- * Tool to search markets by user interests with intelligent matching
+ * Interest-based search with intelligent matching
  */
 export const searchMarketsByInterestsTool = {
 	name: "SEARCH_POLYMARKET_BY_INTERESTS",
@@ -273,7 +181,7 @@ export const searchMarketsByInterestsTool = {
 		knowledgeLevel?: "beginner" | "intermediate" | "advanced";
 		riskTolerance?: "conservative" | "moderate" | "aggressive";
 		sortBy?: string;
-	}) => {
+	}): Promise<string> => {
 		const polymarketService = new PolymarketService();
 
 		try {
@@ -331,7 +239,8 @@ export const searchMarketsByInterestsTool = {
 				   💰 Volume: $${market.volume24hr?.toLocaleString() || "N/A"} | Liquidity: $${market.liquidity?.toLocaleString() || "N/A"}
 				   📅 ${market.endDate ? `Ends: ${new Date(market.endDate).toLocaleDateString()}` : "End date TBD"}
 				   🏷️  ${market.category || market.eventTitle || "General"}
-				   🆔 *Market ID: ${market.id}*
+				   🆔 Market ID: ${market.id}
+				   Condition ID: ${market.conditionId}
 				   ${market.description ? `📝 ${market.description.slice(0, 120)}${market.description.length > 120 ? "..." : ""}` : ""}
 				   ${market.matchReason ? `🔍 Why it matches: ${market.matchReason}` : ""}
 			`;
@@ -350,19 +259,27 @@ export const searchMarketsByInterestsTool = {
 } as const;
 
 /**
- * Tool to get markets grouped by events (better organization)
+ * Get markets grouped by events
  */
 export const getMarketsByEventsTool = {
 	name: "GET_POLYMARKET_EVENTS",
 	description:
 		"Get Polymarket markets organized by events (related markets grouped together)",
-	parameters: getMarketsParams,
-	execute: async (params: GetMarketsParams) => {
+	parameters: z.object({
+		limit: z
+			.number()
+			.min(1)
+			.max(50)
+			.optional()
+			.default(10)
+			.describe("Number of markets to fetch (1-50)"),
+	}),
+	execute: async (params: { limit?: number }): Promise<string> => {
 		const polymarketService = new PolymarketService();
 
 		try {
 			const eventGroups = await polymarketService.getMarketsByEvents(
-				params.limit,
+				params.limit || 10,
 			);
 
 			if (Object.keys(eventGroups).length === 0) {
@@ -399,18 +316,24 @@ export const getMarketsByEventsTool = {
 } as const;
 
 /**
- * Tool to get available Polymarket prediction markets
+ * Get available markets
  */
-// In your MCP tool file, change GET_POLYMARKET_MARKETS to use Gamma API:
 export const getMarketsTool = {
 	name: "GET_POLYMARKET_MARKETS",
 	description: "Get a list of available Polymarket prediction markets",
-	parameters: getMarketsParams,
-	execute: async (params: GetMarketsParams) => {
+	parameters: z.object({
+		limit: z
+			.number()
+			.min(1)
+			.max(50)
+			.optional()
+			.default(10)
+			.describe("Number of markets to fetch (1-50)"),
+	}),
+	execute: async (params: { limit?: number }): Promise<string> => {
 		const polymarketService = new PolymarketService();
 
 		try {
-			// ✅ Use Gamma API instead of CLOB
 			const markets = await polymarketService.searchMarketsEnhanced("", {
 				limit: params.limit,
 				useGammaAPI: true,
@@ -434,16 +357,21 @@ export const getMarketsTool = {
 			return `Error fetching markets: ${error instanceof Error ? error.message : "Unknown error"}`;
 		}
 	},
-};
+} as const;
 
 /**
- * Tool to get details for a specific Polymarket market
+ * Get specific market details
  */
 export const getMarketTool = {
 	name: "GET_POLYMARKET_MARKET",
 	description: "Get detailed information about a specific Polymarket market",
-	parameters: getMarketParams,
-	execute: async (params: GetMarketParams) => {
+	parameters: z.object({
+		conditionId: z
+			.string()
+			.min(1)
+			.describe("The condition ID of the market to fetch"),
+	}),
+	execute: async (params: { conditionId: string }): Promise<string> => {
 		const polymarketService = new PolymarketService();
 
 		try {
@@ -468,14 +396,16 @@ export const getMarketTool = {
 } as const;
 
 /**
- * Tool to get order book for a specific token
+ * Get order book for specific token
  */
 export const getOrderBookTool = {
 	name: "GET_POLYMARKET_ORDERBOOK",
 	description:
 		"Get the order book (bids and asks) for a specific Polymarket token",
-	parameters: getOrderBookParams,
-	execute: async (params: GetOrderBookParams) => {
+	parameters: z.object({
+		tokenId: z.string().min(1).describe("The token ID to get order book for"),
+	}),
+	execute: async (params: { tokenId: string }): Promise<string> => {
 		const polymarketService = new PolymarketService();
 
 		try {
@@ -514,13 +444,30 @@ export const getOrderBookTool = {
 } as const;
 
 /**
- * Tool to create a buy order
+ * Create buy order
  */
 export const createBuyOrderTool = {
 	name: "CREATE_POLYMARKET_BUY_ORDER",
 	description: "Create a buy order on Polymarket for a specific outcome",
-	parameters: createOrderParams,
-	execute: async (params: CreateOrderParams) => {
+	parameters: z.object({
+		marketId: z.string().min(1).describe("The market ID to trade"),
+		outcome: z
+			.string()
+			.min(1)
+			.describe("The outcome to trade (e.g., 'Yes', 'No', 'Up', 'Down')"),
+		price: z
+			.number()
+			.min(0.01)
+			.max(0.99)
+			.describe("Order price between 0.01 and 0.99"),
+		size: z.number().min(1).describe("Order size (number of shares)"),
+	}),
+	execute: async (params: {
+		marketId: string;
+		outcome: string;
+		price: number;
+		size: number;
+	}): Promise<string> => {
 		const polymarketService = new PolymarketService();
 
 		if (!polymarketService.isReadyForTrading()) {
@@ -528,14 +475,12 @@ export const createBuyOrderTool = {
 		}
 
 		try {
-			// Get raw market data to access token IDs
 			const rawMarketData = await polymarketService.getRawMarket(
 				params.marketId,
 			);
 			const market = rawMarketData.market;
 			const tokens = rawMarketData.tokens;
 
-			// Find the token ID for the specified outcome
 			const token = tokens.find((t) => t.outcome === params.outcome);
 			if (!token) {
 				const availableOutcomes = tokens
@@ -576,13 +521,30 @@ export const createBuyOrderTool = {
 } as const;
 
 /**
- * Tool to create a sell order
+ * Create sell order
  */
 export const createSellOrderTool = {
 	name: "CREATE_POLYMARKET_SELL_ORDER",
 	description: "Create a sell order on Polymarket for a specific outcome",
-	parameters: createOrderParams,
-	execute: async (params: CreateOrderParams) => {
+	parameters: z.object({
+		marketId: z.string().min(1).describe("The market ID to trade"),
+		outcome: z
+			.string()
+			.min(1)
+			.describe("The outcome to trade (e.g., 'Yes', 'No', 'Up', 'Down')"),
+		price: z
+			.number()
+			.min(0.01)
+			.max(0.99)
+			.describe("Order price between 0.01 and 0.99"),
+		size: z.number().min(1).describe("Order size (number of shares)"),
+	}),
+	execute: async (params: {
+		marketId: string;
+		outcome: string;
+		price: number;
+		size: number;
+	}): Promise<string> => {
 		const polymarketService = new PolymarketService();
 
 		if (!polymarketService.isReadyForTrading()) {
@@ -590,14 +552,12 @@ export const createSellOrderTool = {
 		}
 
 		try {
-			// Get raw market data to access token IDs
 			const rawMarketData = await polymarketService.getRawMarket(
 				params.marketId,
 			);
 			const market = rawMarketData.market;
 			const tokens = rawMarketData.tokens;
 
-			// Find the token ID for the specified outcome
 			const token = tokens.find((t) => t.outcome === params.outcome);
 			if (!token) {
 				const availableOutcomes = tokens
@@ -638,13 +598,13 @@ export const createSellOrderTool = {
 } as const;
 
 /**
- * Tool to get user's orders
+ * Get user orders
  */
 export const getUserOrdersTool = {
 	name: "GET_POLYMARKET_USER_ORDERS",
 	description: "Get the current user's orders on Polymarket",
 	parameters: z.object({}),
-	execute: async () => {
+	execute: async (): Promise<string> => {
 		const polymarketService = new PolymarketService();
 
 		if (!polymarketService.isReadyForTrading()) {
@@ -679,14 +639,66 @@ export const getUserOrdersTool = {
 } as const;
 
 /**
- * Tool to get user's positions and portfolio data
+ * Get user positions
  */
 export const getUserPositionsTool = {
 	name: "GET_POLYMARKET_POSITIONS",
 	description:
 		"Get a user's current positions and portfolio data from Polymarket",
-	parameters: getUserPositionsParams,
-	execute: async (params: GetUserPositionsParams) => {
+	parameters: z.object({
+		userAddress: z
+			.string()
+			.min(1)
+			.describe("The user's Polygon address (0x...)"),
+		limit: z
+			.number()
+			.min(1)
+			.max(500)
+			.optional()
+			.default(20)
+			.describe("Number of positions to fetch (1-500)"),
+		sizeThreshold: z
+			.number()
+			.min(0)
+			.optional()
+			.default(1)
+			.describe("Minimum position size to include"),
+		eventId: z.string().optional().describe("Filter by specific event ID"),
+		redeemable: z
+			.boolean()
+			.optional()
+			.describe("Filter for redeemable positions only"),
+		sortBy: z
+			.enum([
+				"TOKENS",
+				"CURRENT",
+				"INITIAL",
+				"CASHPNL",
+				"PERCENTPNL",
+				"TITLE",
+				"RESOLVING",
+				"PRICE",
+			])
+			.optional()
+			.default("CURRENT")
+			.describe("Sort criteria"),
+	}),
+	execute: async (params: {
+		userAddress: string;
+		limit?: number;
+		sizeThreshold?: number;
+		eventId?: string;
+		redeemable?: boolean;
+		sortBy?:
+			| "TOKENS"
+			| "CURRENT"
+			| "INITIAL"
+			| "CASHPNL"
+			| "PERCENTPNL"
+			| "TITLE"
+			| "RESOLVING"
+			| "PRICE";
+	}): Promise<string> => {
 		const polymarketService = new PolymarketService();
 
 		try {
@@ -712,7 +724,6 @@ export const getUserPositionsTool = {
 				`;
 			}
 
-			// Calculate portfolio summary
 			let totalValue = 0;
 			let totalPnl = 0;
 			let winningPositions = 0;
@@ -775,7 +786,7 @@ export const getUserPositionsTool = {
 } as const;
 
 /**
- * Check buy order requirements (balance, max order size)
+ * Check buy order requirements
  */
 export const checkBuyOrderTool = {
 	name: "CHECK_BUY_ORDER_REQUIREMENTS",
@@ -786,7 +797,7 @@ export const checkBuyOrderTool = {
 			.min(0.01)
 			.describe("Total value of the order (price × size)"),
 	}),
-	execute: async (params: { orderValue: number }) => {
+	execute: async (params: { orderValue: number }): Promise<string> => {
 		const polymarketService = new PolymarketService();
 
 		if (!polymarketService.isReadyForTrading()) {
@@ -822,61 +833,6 @@ export const checkBuyOrderTool = {
 				`;
 		} catch (error: unknown) {
 			if (error instanceof Error) {
-				return `Error checking buy order requirements: ${error.message}`;
-			}
-			return "An unknown error occurred while checking buy order requirements";
-		}
-	},
-} as const;
-
-/**
- * Check sell order requirements (token balance, max sell size)
- */
-export const checkSellOrderTool = {
-	name: "CHECK_SELL_ORDER_REQUIREMENTS",
-	description:
-		"Check token balance and requirements before placing a sell order",
-	parameters: z.object({
-		tokenId: z.string().describe("Token ID to sell"),
-		size: z.number().min(0.01).describe("Number of tokens to sell"),
-	}),
-	execute: async (params: { tokenId: string; size: number }) => {
-		const polymarketService = new PolymarketService();
-
-		if (!polymarketService.isReadyForTrading()) {
-			return "Error: Trading not available. Wallet or API credentials not configured.";
-		}
-
-		try {
-			const requirements = await polymarketService.checkSellOrderRequirements(
-				params.tokenId,
-				params.size,
-			);
-
-			if (requirements.canPlace) {
-				return dedent`
-					✅ **Sell Order Requirements Check - PASSED**
-					
-					🎯 **Token Balance:** ${requirements.balance} tokens
-					📊 **Requested Sell Size:** ${params.size} tokens
-					📈 **Max Sell Size:** ${requirements.maxOrderSize} tokens
-					
-					✨ You can place this sell order!
-				`;
-			}
-			return dedent`
-					❌ **Sell Order Requirements Check - FAILED**
-					
-					🎯 **Token Balance:** ${requirements.balance} tokens
-					📊 **Requested Sell Size:** ${params.size} tokens
-					📈 **Max Sell Size:** ${requirements.maxOrderSize} tokens
-					
-					⚠️ **Error:** ${requirements.error}
-					
-					💡 **Suggestion:** Reduce your sell size to ${requirements.maxOrderSize} tokens or less.
-				`;
-		} catch (error: unknown) {
-			if (error instanceof Error) {
 				return `Error checking sell order requirements: ${error.message}`;
 			}
 			return "An unknown error occurred while checking sell order requirements";
@@ -885,16 +841,18 @@ export const checkSellOrderTool = {
 } as const;
 
 /**
- * Select and get detailed information about a specific market
+ * Select market for trading with detailed preparation
  */
 export const selectMarketTool = {
 	name: "SELECT_MARKET_FOR_TRADING",
 	description:
 		"Get detailed information about a specific market to prepare for trading",
 	parameters: z.object({
-		marketId: z.string().describe("Market ID to analyze"),
+		marketId: z
+			.string()
+			.describe("Market ID to analyze (conditionId or Gamma ID)"),
 	}),
-	execute: async (params: { marketId: string }) => {
+	execute: async (params: { marketId: string }): Promise<string> => {
 		console.log("🔍 SELECT_MARKET_FOR_TRADING called with:", params);
 		console.log(
 			`🔍 marketId: "${params.marketId}" (type: ${typeof params.marketId})`,
@@ -903,21 +861,69 @@ export const selectMarketTool = {
 		const polymarketService = new PolymarketService();
 
 		try {
-			// Try to get the raw market data with token IDs
-			console.log(`📊 Calling getRawMarket with: "${params.marketId}"`);
-			const rawMarketData = await polymarketService.getRawMarket(
-				params.marketId,
+			let conditionId: string;
+			let gammaMarketData: any = null;
+
+			// Handle both formats: conditionId (0x...) and Gamma ID (578103)
+			if (params.marketId.startsWith("0x")) {
+				// Direct conditionId - use CLOB directly
+				console.log(`📊 Using direct conditionId: ${params.marketId}`);
+				conditionId = params.marketId;
+			} else {
+				// Gamma ID - need to look up conditionId first
+				console.log(
+					`🔍 Looking up Gamma ID ${params.marketId} to get conditionId`,
+				);
+
+				const gammaMarkets = await polymarketService.getMarketsFromGamma({
+					limit: 100,
+				});
+				gammaMarketData = gammaMarkets.find(
+					(m: any) => m.id === params.marketId,
+				);
+
+				if (!gammaMarketData) {
+					return `❌ Market ${params.marketId} not found in Gamma API.`;
+				}
+
+				conditionId = gammaMarketData.conditionId;
+
+				if (!conditionId) {
+					return `❌ Market ${params.marketId} found but missing conditionId for trading. This market may not be available for trading yet.`;
+				}
+
+				console.log(
+					`🔗 Found conditionId: ${conditionId} for Gamma ID: ${params.marketId}`,
+				);
+			}
+
+			// Now get detailed market data from CLOB using conditionId
+			console.log(
+				`📊 Getting CLOB market data for conditionId: ${conditionId}`,
 			);
+			const rawMarketData = await polymarketService.getRawMarket(conditionId);
 			const market = rawMarketData.market;
 
 			console.log("✅ Market found:", market);
 			console.log("✅ Token data:", rawMarketData.tokens);
 
+			// Get enhanced info from Gamma data if available
+			let enhancedInfo = "";
+			if (gammaMarketData) {
+				const volume24hr = gammaMarketData.volume24hr || 0;
+				const liquidity =
+					gammaMarketData.liquidityNum || gammaMarketData.liquidity || 0;
+				enhancedInfo = `
+📊 **Market Stats:**
+- 24h Volume: ${Number(volume24hr).toLocaleString()}
+- Liquidity: ${Number(liquidity).toLocaleString()}`;
+			}
+
 			// Get order book for each token to show current prices
 			let orderBookInfo = "";
 			try {
 				if (rawMarketData.tokens && rawMarketData.tokens.length > 0) {
-					orderBookInfo = "\n💰 *Current Prices*:\n";
+					orderBookInfo = "\n💰 **Current Prices:**";
 
 					for (const token of rawMarketData.tokens) {
 						try {
@@ -928,16 +934,17 @@ export const selectMarketTool = {
 							if (orderBook.bids.length > 0 && orderBook.asks.length > 0) {
 								const bestBid = Number(orderBook.bids[0].price);
 								const bestAsk = Number(orderBook.asks[0].price);
-								orderBookInfo += `• ${token.outcome}: Bid $${bestBid.toFixed(3)} | Ask $${bestAsk.toFixed(3)}\n`;
+								const spread = bestAsk - bestBid;
+								orderBookInfo += `\n• **${token.outcome}:** Buy ${bestBid.toFixed(3)} | Sell ${bestAsk.toFixed(3)} (Spread: ${spread.toFixed(3)})`;
 							} else {
-								orderBookInfo += `• ${token.outcome}: No active orders\n`;
+								orderBookInfo += `\n• **${token.outcome}:** No active orders`;
 							}
 						} catch (tokenError) {
 							console.log(
 								`⚠️ Could not fetch order book for ${token.outcome}:`,
 								tokenError,
 							);
-							orderBookInfo += `• *${token.outcome}*: Error fetching prices\n`;
+							orderBookInfo += `\n• **${token.outcome}:** Price unavailable`;
 						}
 					}
 				}
@@ -946,24 +953,34 @@ export const selectMarketTool = {
 				orderBookInfo = "\n⚠️ Could not fetch current prices";
 			}
 
-			return `✅ Market Details for Trading
+			// Extract token IDs for trading
+			const tokenIds = rawMarketData.tokens
+				.map((t) => `${t.outcome}: ${t.token_id}`)
+				.join("\n• ");
 
-🎯 Market: ${market.question}
-🆔 Market ID: ${market.id}
-📅 End Date: ${market.endDate || "Not specified"}
-🏷️ Category: ${market.category || "General"}
+			return `🎯 **Market Ready for Trading**
 
-📊 Outcomes: ${market.outcomes.join(" | ")}
+**Question:** ${market.question}
+**Market ID:** ${conditionId}
+**End Date:** ${market.endDate ? new Date(market.endDate).toLocaleDateString() : "Not specified"}
+**Category:** ${market.category || "General"}
+${enhancedInfo}
+
+**Trading Outcomes:** ${market.outcomes.join(" vs ")}
 ${orderBookInfo}
 
-💡 Next Steps:
-• Use PREPARE_ORDER_FOR_MARKET to check if you can place orders
-• Use CREATE_POLYMARKET_BUY_ORDER to place buy orders
-• Use CREATE_POLYMARKET_SELL_ORDER to place sell orders
+**Token IDs for Orders:**
+• ${tokenIds}
 
-🔗 Market ID for trading: ${market.id}`;
+💡 **Next Steps:**
+- Use **PREPARE_ORDER_FOR_MARKET** to calculate order requirements
+- Use **CREATE_POLYMARKET_BUY_ORDER** to place buy orders  
+- Use **CREATE_POLYMARKET_SELL_ORDER** to place sell orders
+- Use **CHECK_BUY_ORDER_REQUIREMENTS** to verify your balance
+
+🔗 **Market ID for trading:** ${conditionId}`;
 		} catch (error) {
-			console.error("❌ getMarket failed:", error);
+			console.error("❌ Error in SELECT_MARKET_FOR_TRADING:", error);
 			const errorMessage =
 				error instanceof Error ? error.message : String(error);
 			console.error("❌ Error details:", {
@@ -971,13 +988,25 @@ ${orderBookInfo}
 				stack: error instanceof Error ? error.stack : undefined,
 			});
 
-			return `❌ Error fetching market ${params.marketId}: ${errorMessage}`;
+			// Provide helpful error message based on error type
+			if (errorMessage.includes("404") || errorMessage.includes("not found")) {
+				return `❌ Market ${params.marketId} not found in CLOB. This market may not be available for trading, or the ID might be incorrect.
+
+💡 **Troubleshooting:**
+- Make sure you're using the Market ID exactly as shown in recommendations
+- Some markets from Gamma API may not be available for trading via CLOB
+- Try searching for other markets with **GET_POLYMARKET_MARKETS**`;
+			}
+
+			return `❌ Error fetching market ${params.marketId}: ${errorMessage}
+
+💡 Please try again or use a different Market ID.`;
 		}
 	},
-};
+} as const;
 
 /**
- * Quick order preparation tool
+ * Prepare order with detailed calculation
  */
 export const prepareOrderTool = {
 	name: "PREPARE_ORDER_FOR_MARKET",
@@ -1005,7 +1034,7 @@ export const prepareOrderTool = {
 		price: number;
 		size: number;
 		outcome?: string;
-	}) => {
+	}): Promise<string> => {
 		const polymarketService = new PolymarketService();
 
 		if (!polymarketService.isReadyForTrading()) {
@@ -1097,6 +1126,64 @@ export const prepareOrderTool = {
 				return `Error preparing order: ${error.message}`;
 			}
 			return "An unknown error occurred while preparing the order";
+		}
+	},
+} as const;
+
+/**
+ * Check sell order requirements
+ */
+export const checkSellOrderTool = {
+	name: "CHECK_SELL_ORDER_REQUIREMENTS",
+	description:
+		"Check token balance and requirements before placing a sell order",
+	parameters: z.object({
+		tokenId: z.string().describe("Token ID to sell"),
+		size: z.number().min(0.01).describe("Number of tokens to sell"),
+	}),
+	execute: async (params: {
+		tokenId: string;
+		size: number;
+	}): Promise<string> => {
+		const polymarketService = new PolymarketService();
+
+		if (!polymarketService.isReadyForTrading()) {
+			return "Error: Trading not available. Wallet or API credentials not configured.";
+		}
+
+		try {
+			const requirements = await polymarketService.checkSellOrderRequirements(
+				params.tokenId,
+				params.size,
+			);
+
+			if (requirements.canPlace) {
+				return dedent`
+					✅ **Sell Order Requirements Check - PASSED**
+					
+					🎯 **Token Balance:** ${requirements.balance} tokens
+					📊 **Requested Sell Size:** ${params.size} tokens
+					📈 **Max Sell Size:** ${requirements.maxOrderSize} tokens
+					
+					✨ You can place this sell order!
+				`;
+			}
+			return dedent`
+					❌ **Sell Order Requirements Check - FAILED**
+					
+					🎯 **Token Balance:** ${requirements.balance} tokens
+					📊 **Requested Sell Size:** ${params.size} tokens
+					📈 **Max Sell Size:** ${requirements.maxOrderSize} tokens
+					
+					⚠️ **Error:** ${requirements.error}
+					
+					💡 **Suggestion:** Reduce your sell size to ${requirements.maxOrderSize} tokens or less.
+				`;
+		} catch (error: unknown) {
+			if (error instanceof Error) {
+				return `Error checking sell order requirements: ${error.message}`;
+			}
+			return "An unknown error occurred while checking sell order requirements";
 		}
 	},
 } as const;

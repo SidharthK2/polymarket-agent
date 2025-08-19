@@ -506,13 +506,24 @@ export class PolymarketService {
 				}
 
 				const data = await response.json();
+
 				const markets = Array.isArray(data) ? data : [];
 
-				console.log(
-					`✅ Fetched ${markets.length} markets from Gamma API with enhanced metadata`,
-				);
-
-				return markets;
+				return markets.map((market) => ({
+					id: market.id,
+					question: market.question,
+					description: market.description || "",
+					endDate: market.endDateIso || market.endDate,
+					outcomes: Array.isArray(market.outcomes)
+						? market.outcomes
+						: JSON.parse(market.outcomes || '["Yes", "No"]'),
+					eventId: market.questionID || "",
+					eventTitle: market.events?.[0]?.title || "",
+					category: market.events?.[0]?.ticker || "General",
+					conditionId: market.conditionId,
+					volume24hr: Number(market.volume || 0),
+					liquidity: Number(market.liquidityNum || market.volume || 0),
+				}));
 			} catch (error) {
 				console.warn(`⚠️ Gamma API attempt ${attempt + 1} failed:`, error);
 
@@ -597,7 +608,7 @@ export class PolymarketService {
 			if (useGammaAPI) {
 				// Don't use tags - Polymarket's tags are broken and return wrong markets
 				console.log(
-					`🔍 Searching without tags (tags are broken on Polymarket)`,
+					"🔍 Searching without tags (tags are broken on Polymarket)",
 				);
 
 				const gammaMarkets = await this.getMarketsFromGamma({
@@ -627,15 +638,17 @@ export class PolymarketService {
 			const scoredMarkets: EnhancedMarket[] = enhancedMarkets.map((market) => {
 				const marketAny = market as Record<string, unknown>;
 
-				// Fix data mapping based on actual Gamma API structure
+				// Extract events array with proper typing
+				const events = (marketAny.events as any[]) || [];
+				const firstEvent = events[0] || {};
+
 				const marketData = {
-					id:
-						(marketAny.conditionId as string) || (marketAny.id as string) || "",
+					id: (marketAny.id as string) || "",
 					question: (marketAny.question as string) || "Unknown Market",
 					description: (marketAny.description as string) || "",
 					endDate:
-						(marketAny.endDate as string) ||
 						(marketAny.endDateIso as string) ||
+						(marketAny.endDate as string) ||
 						"",
 					outcomes: Array.isArray(marketAny.outcomes)
 						? (marketAny.outcomes as string[])
@@ -643,10 +656,10 @@ export class PolymarketService {
 							? JSON.parse(marketAny.outcomes as string)
 							: ["Yes", "No"],
 					eventId: (marketAny.questionID as string) || "",
-					eventTitle: (marketAny.eventTitle as string) || "",
-					category: (marketAny.category as string) || "",
-					conditionId:
-						(marketAny.conditionId as string) || (marketAny.id as string) || "",
+					eventTitle: firstEvent.title || "",
+					category: firstEvent.ticker || "",
+					conditionId: (marketAny.conditionId as string) || "",
+					clobTokenIds: marketAny.clobTokenIds as string,
 				};
 
 				const volume24hr = Number(
@@ -1023,6 +1036,14 @@ export class PolymarketService {
 
 		try {
 			const market = await this.clobClient.getMarket(conditionId);
+
+			// Check if the response contains an error before parsing
+			if (market && typeof market === "object" && "error" in market) {
+				throw new Error(
+					`Market not found in CLOB: ${conditionId}. ${market.error}`,
+				);
+			}
+
 			const rawMarket = marketSchema.parse(market);
 			// Convert CLOB API response to Market format
 			return {
@@ -1057,6 +1078,14 @@ export class PolymarketService {
 
 		try {
 			const market = await this.clobClient.getMarket(conditionId);
+
+			// Check if the response contains an error before parsing
+			if (market && typeof market === "object" && "error" in market) {
+				throw new Error(
+					`Market not found in CLOB: ${conditionId}. ${market.error}`,
+				);
+			}
+
 			const rawMarket = marketSchema.parse(market);
 
 			// Convert CLOB API response to Market format
@@ -1365,7 +1394,7 @@ export class PolymarketService {
 			}
 
 			const data = await response.json();
-			console.log(`✅ Fetched token holders data`);
+			console.log("✅ Fetched token holders data");
 
 			return data;
 		} catch (error) {
