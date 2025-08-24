@@ -1,27 +1,22 @@
-import { Chain, ClobClient, Side } from "@polymarket/clob-client";
+import {
+	type ApiKeyCreds,
+	Chain,
+	ClobClient,
+	Side,
+	AssetType,
+	OrderType,
+} from "@polymarket/clob-client";
 import { Wallet } from "@ethersproject/wallet";
 import { z } from "zod";
 
 // Types and schemas
-// Token schema for CLOB API
 const tokenSchema = z.object({
 	token_id: z.string(),
 	outcome: z.string(),
 });
 
-// Rewards schema for CLOB API
-const rewardsSchema = z.object({
-	min_size: z.number(),
-	max_spread: z.number(),
-	event_start_date: z.string().optional(),
-	event_end_date: z.string().optional(),
-	in_game_multiplier: z.number().optional(),
-	reward_epoch: z.number().optional(),
-});
-
-// Market schema matching actual CLOB API response
 const marketSchema = z.object({
-	condition_id: z.string(), // Primary clob market ID
+	condition_id: z.string(),
 	question_id: z.string().optional(),
 	question: z.string(),
 	description: z.string().optional(),
@@ -123,528 +118,220 @@ export interface OrderRequirements {
 
 type RawMarket = z.infer<typeof marketSchema>;
 
-interface EnhancedMarket extends Market {
-	relevanceScore: number;
-	volume24hr?: number;
-	liquidity?: number;
-	popularityScore?: number;
-}
-
 export class PolymarketService {
-	// Configuration constants
-	private static readonly DEFAULT_LIMIT = 8; // Balanced default for good results
-	private static readonly DEFAULT_INTEREST_LIMIT = 6; // Slightly more for interest-based search
-	private static readonly MAX_RESULTS_MULTIPLIER = 1.5; // More conservative multiplier
-	private static readonly MAX_RESULTS_CAP = 40; // Reasonable cap
-	private static readonly MIN_VOLUME_DEFAULT = 0.001; // Very low default - most markets have low volume
-	private static readonly MIN_VOLUME_CONSERVATIVE = 0.5; // Higher volume for conservative
-	private static readonly MIN_VOLUME_MODERATE = 0.1; // Moderate volume threshold
-	private static readonly MIN_VOLUME_AGGRESSIVE = 0.0001; // Extremely low volume for aggressive
-	private static readonly RELEVANCE_SCORE_THRESHOLD = 0.01; // Much lower threshold to catch more markets
-	private static readonly RECENT_MARKETS_DAYS = 60;
-	private static readonly GAMMA_API_RETRY_ATTEMPTS = 2;
-	private static readonly GAMMA_API_RETRY_DELAY = 1000;
-	private static readonly GAMMA_API_DATE_FILTER_DAYS = 45; // Slightly more recent
-
 	private clobClient: ClobClient | null = null;
 	private wallet: Wallet | null = null;
 	private isInitialized = false;
+	private apiKeyCreds: ApiKeyCreds | null = null;
 
-	/**
-	 * Category mappings for better market organization
-	 */
-	private static readonly CATEGORY_MAPPINGS = {
-		politics: [
-			"election",
-			"vote",
-			"president",
-			"congress",
-			"senate",
-			"candidate",
-			"political",
-			"policy",
-			"government",
-			"biden",
-			"trump",
-		],
-		sports: [
-			"nfl",
-			"nba",
-			"mlb",
-			"soccer",
-			"football",
-			"basketball",
-			"baseball",
-			"olympics",
-			"championship",
-			"playoff",
-			"tournament",
-		],
-		crypto: [
-			"bitcoin",
-			"ethereum",
-			"crypto",
-			"blockchain",
-			"defi",
-			"nft",
-			"token",
-			"coin",
-			"btc",
-			"eth",
-			"trading",
-		],
-		tech: [
-			"ai",
-			"artificial intelligence",
-			"technology",
-			"tech",
-			"startup",
-			"ipo",
-			"stock",
-			"tesla",
-			"apple",
-			"google",
-			"meta",
-		],
-		entertainment: [
-			"movie",
-			"film",
-			"tv",
-			"celebrity",
-			"awards",
-			"oscar",
-			"emmy",
-			"music",
-			"album",
-			"box office",
-		],
-		current_events: [
-			"current events",
-			"trending",
-			"viral",
-			"social media",
-			"twitter",
-			"breaking news",
-		],
-	};
-
-	/**
-	 * Advanced semantic keywords for better matching
-	 */
-	private static readonly SEMANTIC_KEYWORDS = {
-		election: [
-			"election",
-			"vote",
-			"ballot",
-			"primary",
-			"candidate",
-			"campaign",
-			"polling",
-			"electoral",
-		],
-		economy: [
-			"economy",
-			"market",
-			"financial",
-			"economic",
-			"fiscal",
-			"monetary",
-			"trade",
-			"commerce",
-		],
-		competition: [
-			"win",
-			"winner",
-			"champion",
-			"victory",
-			"defeat",
-			"compete",
-			"tournament",
-			"contest",
-		],
-		price: [
-			"price",
-			"value",
-			"cost",
-			"expensive",
-			"cheap",
-			"bull",
-			"bear",
-			"pump",
-			"dump",
-		],
-		popularity: [
-			"popular",
-			"trending",
-			"viral",
-			"famous",
-			"celebrity",
-			"mainstream",
-			"widespread",
-		],
-	};
+	private static readonly TAG_MAP = {
+		crypto: 21,
+		bitcoin: 21,
+		ethereum: 21,
+		defi: 21,
+		btc: 21,
+		eth: 21,
+		ai: 22,
+		gpt: 22,
+		chatgpt: 22,
+		openai: 22,
+		tech: 7,
+		technology: 7,
+		meta: 7,
+		gaming: 3,
+		"video games": 3,
+		game: 3,
+		metacritic: 3,
+		gta: 4,
+		"grand theft auto": 4,
+		soccer: 1,
+		football: 1,
+		"champions league": 1,
+		"premier league": 1,
+		nfl: 10,
+		"american football": 10,
+		basketball: 28,
+		nba: 28,
+		politics: 2,
+		election: 2,
+		trump: 2,
+		biden: 2,
+		emmys: 18,
+		awards: 18,
+		entertainment: 18,
+	} as const;
 
 	constructor() {
-		// Initialize in constructor
 		this.initializeClient();
 	}
 
-	/**
-	 * Initialize the Polymarket CLOB client
-	 */
+	// Simple tag lookup
+	private getTag(query: string): number | null {
+		const q = query.toLowerCase();
+		for (const [word, tag] of Object.entries(PolymarketService.TAG_MAP)) {
+			if (q.includes(word)) {
+				console.log(`🏷️ Matched "${word}" → tag ${tag} for query: ${query}`);
+				return tag;
+			}
+		}
+		return null;
+	}
+
 	private async initializeClient(): Promise<void> {
 		try {
 			const privateKey = process.env.PRIVATE_KEY;
 			if (!privateKey) {
-				console.warn(
-					"⚠️ No PRIVATE_KEY provided - CLOB client will be read-only",
-				);
+				console.warn("⚠️ No PRIVATE_KEY - read-only mode");
 				this.isInitialized = true;
 				return;
 			}
 
-			// Create wallet
+			console.log("🔑 Initializing wallet...");
 			this.wallet = new Wallet(privateKey);
-			console.log(`🔑 Wallet address: ${this.wallet.address}`);
+			console.log(`✅ Wallet address: ${this.wallet.address}`);
 
-			// Initialize CLOB client
+			const clobApiUrl =
+				process.env.CLOB_API_URL || "https://clob.polymarket.com";
+			console.log(`🔗 Using CLOB API URL: ${clobApiUrl}`);
+
+			console.log("🔐 Creating/deriving API key...");
+			const tempClient = new ClobClient(clobApiUrl, Chain.POLYGON, this.wallet);
+
+			try {
+				this.apiKeyCreds = await tempClient.createOrDeriveApiKey();
+				console.log("✅ API key created/derived successfully");
+				console.log("🔑 API key ID:", this.apiKeyCreds?.key || "N/A");
+			} catch (apiKeyError) {
+				console.error("❌ Failed to create/derive API key:", apiKeyError);
+				console.error("This might be due to:");
+				console.error("  - Invalid private key format");
+				console.error("  - Network connectivity issues");
+				console.error("  - Polymarket API service issues");
+				console.error("  - Rate limiting");
+				throw apiKeyError;
+			}
+
+			console.log("🔗 Creating authenticated CLOB client...");
 			this.clobClient = new ClobClient(
-				process.env.CLOB_API_URL || "https://clob.polymarket.com",
+				clobApiUrl,
 				Chain.POLYGON,
 				this.wallet,
+				this.apiKeyCreds,
+				0, // signatureType: 0 for private key
+				"", // funder address (empty for now)
 			);
 
 			this.isInitialized = true;
-			const mode = this.canTrade()
-				? "with trading capabilities"
-				: "in read-only mode";
-			console.log(`✅ Polymarket CLOB client initialized ${mode}`);
+			console.log(
+				"✅ Polymarket client fully initialized with API credentials",
+			);
+
+			// Test the connection with a simple balance check
+			try {
+				console.log("🧪 Testing connection with balance check...");
+				const testBalance = await this.clobClient.getBalanceAllowance({
+					asset_type: AssetType.COLLATERAL,
+				});
+				console.log(
+					`✅ Connection test successful - Balance: $${testBalance.balance}`,
+				);
+			} catch (balanceError) {
+				console.warn(
+					"⚠️ Balance check failed (but client is initialized):",
+					balanceError instanceof Error ? balanceError.message : balanceError,
+				);
+				console.warn("💡 This might be normal if the wallet has no balance");
+			}
 		} catch (error) {
-			console.error("❌ Failed to initialize Polymarket client:", error);
-			this.isInitialized = true; // Mark as initialized even if failed
+			console.error("❌ Failed to initialize client:", error);
+			console.error(
+				"Stack:",
+				error instanceof Error ? error.stack : "No stack",
+			);
+
+			// Set initialization flag to prevent infinite retries
+			this.isInitialized = true;
+
+			// Provide helpful error information
+			if (error instanceof Error) {
+				if (error.message.includes("Could not create api key")) {
+					console.error("💡 API Key Creation Failed - Possible solutions:");
+					console.error(
+						"  1. Check your PRIVATE_KEY format (should be 0x... hex string)",
+					);
+					console.error(
+						"  2. Ensure your wallet has sufficient MATIC for gas fees",
+					);
+					console.error("  3. Check network connectivity to Polymarket");
+					console.error("  4. Try again later (rate limiting)");
+				}
+			}
 		}
 	}
 
-	/**
-	 * Ensure client is initialized before operations
-	 */
 	private async ensureInitialized(): Promise<void> {
 		if (!this.isInitialized) {
 			await this.initializeClient();
 		}
-	}
-
-	/**
-	 * Get available markets from Polymarket CLOB (only used for specific market details now)
-	 */
-	async getMarkets(limit = 10): Promise<Market[]> {
-		await this.ensureInitialized();
-
-		if (!this.clobClient) {
-			throw new Error("CLOB client not initialized");
-		}
-
-		try {
-			console.log("📊 Fetching markets from Polymarket CLOB...");
-			const markets = await this.clobClient.getMarkets();
-
-			const marketData = Array.isArray(markets) ? markets : markets?.data || [];
-			if (Array.isArray(marketData)) {
-				// Filter for recent markets only
-				const cutoffDate = new Date();
-				cutoffDate.setDate(
-					cutoffDate.getDate() - PolymarketService.RECENT_MARKETS_DAYS,
-				);
-
-				const recentMarkets = marketData.filter((market: RawMarket) => {
-					const endDate = market.end_date_iso;
-					if (!endDate) return false;
-
-					const marketEndDate = new Date(endDate);
-					const isRecent = marketEndDate > cutoffDate;
-					const isActive = market.active !== false;
-
-					return isRecent && isActive;
-				});
-
-				console.log(
-					`📊 Filtered from ${marketData.length} to ${recentMarkets.length} recent active markets`,
-				);
-
-				const processedMarkets: Market[] = [];
-				for (const market of recentMarkets.slice(0, limit)) {
-					try {
-						const rawMarket = marketSchema.parse(market);
-						processedMarkets.push({
-							id: rawMarket.condition_id, // Use condition_id as id since CLOB API doesn't provide separate id
-							conditionId: rawMarket.condition_id,
-							question: rawMarket.question,
-							endDate: rawMarket.end_date_iso || "",
-							outcomes: rawMarket.tokens.map((t) => t.outcome),
-							eventId: rawMarket.question_id || "",
-							eventTitle: "",
-							category: "",
-						});
-					} catch (error) {
-						console.log("⚠️ Market validation failed, skipping market");
-					}
-				}
-
-				return processedMarkets;
-			}
-
-			console.log("⚠️ No market data found in response");
-			return [];
-		} catch (error) {
-			console.error("❌ Error fetching markets from CLOB:", error);
-			throw error;
+		// Wait a bit more to ensure all async operations complete
+		if (!this.clobClient || !this.apiKeyCreds) {
+			await new Promise((resolve) => setTimeout(resolve, 1000));
 		}
 	}
 
-	/**
-	 * Get markets grouped by events (uses CLOB)
-	 */
-	async getMarketsByEvents(
-		limit = 5,
-	): Promise<{ [eventTitle: string]: Market[] }> {
-		await this.ensureInitialized();
-
-		if (!this.clobClient) {
-			throw new Error("CLOB client not initialized");
-		}
-
-		try {
-			console.log("📊 Fetching markets grouped by events...");
-			const markets = await this.getMarkets(limit * 3); // Get more to have good event groupings
-
-			// Group markets by event
-			const eventGroups: { [eventTitle: string]: Market[] } = {};
-
-			for (const market of markets) {
-				const eventKey =
-					market.eventTitle || market.category || "Other Markets";
-				if (!eventGroups[eventKey]) {
-					eventGroups[eventKey] = [];
-				}
-				eventGroups[eventKey].push(market);
-			}
-
-			// Limit to requested number of events
-			const limitedEvents = Object.keys(eventGroups)
-				.slice(0, limit)
-				.reduce(
-					(result, key) => {
-						result[key] = eventGroups[key];
-						return result;
-					},
-					{} as { [eventTitle: string]: Market[] },
-				);
-
-			console.log(
-				`✅ Grouped markets into ${Object.keys(limitedEvents).length} events`,
-			);
-			return limitedEvents;
-		} catch (error) {
-			console.error("❌ Error fetching markets by events:", error);
-			throw error;
-		}
-	}
-
-	// Updated getMarketsFromGamma method for polymarket-service.ts
-	// Replace the existing method with proper Gamma API parameters
-
-	/**
-	 * Fetch markets from Gamma API with CORRECT parameters based on official docs
-	 */
+	// SIMPLIFIED: Get markets from Gamma API
 	async getMarketsFromGamma(
 		options: {
 			limit?: number;
-			offset?: number;
-			ascending?: boolean; // Sort direction
-			archived?: boolean;
-			liquidity_num_min?: number;
-			liquidity_num_max?: number;
+			tag_id?: number;
 			volume_num_min?: number;
-			volume_num_max?: number;
-			start_date_min?: string;
-			end_date_min?: string;
-			end_date_max?: string;
-			maxRetries?: number;
-			retryDelay?: number;
 		} = {},
 	): Promise<Record<string, unknown>[]> {
-		const {
-			limit = 20,
-			offset = 0,
-			ascending = false, // Descending by default (highest first)
-			archived = false, // Exclude archived markets
-			liquidity_num_min,
-			liquidity_num_max,
-			volume_num_min,
-			volume_num_max,
-			start_date_min,
-			end_date_min,
-			end_date_max,
-			maxRetries = 2,
-			retryDelay = 1000,
-		} = options;
+		const { limit = 20, tag_id, volume_num_min } = options;
 
-		console.log("🌟 Gamma API request with params:", {
-			limit,
-			offset,
-			ascending,
-			archived,
-		});
+		try {
+			const params = new URLSearchParams({
+				limit: limit.toString(),
+				order: "volume",
+				ascending: "false",
+				active: "true",
+				closed: "false",
+			});
 
-		for (let attempt = 0; attempt <= maxRetries; attempt++) {
-			try {
-				const params = new URLSearchParams({
-					limit: limit.toString(),
-					offset: offset.toString(),
-					order: "volume",
-					ascending: ascending.toString(),
-					active: "true",
-					closed: "false",
-				});
-
-				// Add optional filters only if specified
-				if (liquidity_num_min !== undefined) {
-					params.append("liquidity_num_min", liquidity_num_min.toString());
-				}
-				if (liquidity_num_max !== undefined) {
-					params.append("liquidity_num_max", liquidity_num_max.toString());
-				}
-				if (volume_num_min !== undefined) {
-					params.append("volume_num_min", volume_num_min.toString());
-				}
-				if (volume_num_max !== undefined) {
-					params.append("volume_num_max", volume_num_max.toString());
-				}
-				if (start_date_min) {
-					params.append("start_date_min", start_date_min);
-				}
-				if (end_date_min) {
-					params.append("end_date_min", end_date_min);
-				}
-				if (end_date_max) {
-					params.append("end_date_max", end_date_max);
-				}
-
-				const url = `https://gamma-api.polymarket.com/markets?${params}`;
-				console.log(`🌟 Gamma API URL (attempt ${attempt + 1}): ${url}`);
-
-				const response = await fetch(url, {
-					headers: {
-						Accept: "application/json",
-						"User-Agent": "PolymarketMCP/1.0",
-					},
-				});
-
-				if (!response.ok) {
-					throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-				}
-
-				const data = await response.json();
-				const markets = Array.isArray(data) ? data : [];
-
-				console.log(`✅ Gamma API success: ${markets.length} markets received`);
-
-				// 🆕 DEBUG: Log sample market structure
-				if (markets.length > 0) {
-					const sample = markets[0];
-					console.log("📋 Sample market structure:", {
-						id: sample.id,
-						question: sample.question,
-						active: sample.active,
-						closed: sample.closed,
-						volume: sample.volume,
-						liquidity: sample.liquidity,
-						conditionId: sample.conditionId,
-						enableOrderBook: sample.enableOrderBook,
-						hasConditionId: !!sample.conditionId,
-					});
-				}
-
-				// 🆕 SIMPLIFIED: Return markets with minimal processing
-				return markets.map((market) => ({
-					id: market.id,
-					question: market.question,
-					description: market.description || "",
-					endDate: market.endDate || market.endDateIso,
-					outcomes: Array.isArray(market.outcomes)
-						? market.outcomes
-						: typeof market.outcomes === "string"
-							? JSON.parse(market.outcomes || '["Yes", "No"]')
-							: ["Yes", "No"],
-					eventId: market.questionID || market.id,
-					eventTitle: market.events?.[0]?.title || "",
-					category: market.events?.[0]?.ticker || market.category || "",
-					conditionId: market.conditionId,
-					volume24hr: Number(market.volume || 0), // Use 'volume' field
-					volume: Number(market.volume || 0),
-					liquidity: Number(market.liquidity || market.liquidityNum || 0),
-					liquidityNum: Number(market.liquidityNum || market.liquidity || 0),
-					active: market.active,
-					closed: market.closed,
-					enableOrderBook: market.enableOrderBook,
-				}));
-			} catch (error) {
-				console.warn(`⚠️ Gamma API attempt ${attempt + 1} failed:`, error);
-
-				if (attempt < maxRetries) {
-					console.log(`🔄 Retrying in ${retryDelay}ms...`);
-					await new Promise((resolve) => setTimeout(resolve, retryDelay));
-					continue;
-				}
-
-				console.error("❌ All Gamma API attempts failed:", error);
-				return [];
+			// Add tag if specified
+			if (tag_id) {
+				params.append("tag_id", tag_id.toString());
+				console.log(`🏷️ Using tag_id=${tag_id}`);
 			}
-		}
 
-		return [];
+			if (volume_num_min !== undefined) {
+				params.append("volume_num_min", volume_num_min.toString());
+			}
+
+			const url = `https://gamma-api.polymarket.com/markets?${params}`;
+			const response = await fetch(url, {
+				headers: {
+					Accept: "application/json",
+					"User-Agent": "PolymarketMCP/1.0",
+				},
+			});
+
+			if (!response.ok) {
+				throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+			}
+
+			const data = await response.json();
+			const markets = Array.isArray(data) ? data : [];
+
+			console.log(`✅ Gamma API: ${markets.length} markets`);
+			return markets;
+		} catch (error) {
+			console.error("❌ Gamma API failed:", error);
+			return [];
+		}
 	}
 
-	/**
-	 * Extract relevant tags from search query for better API filtering
-	 */
-	private extractTagsFromQuery(query: string): string[] {
-		const queryLower = query.toLowerCase();
-		const tags: string[] = [];
-
-		// Map query terms to broad, reliable categories
-		const tagMappings: { [key: string]: string[] } = {
-			politics: ["Politics"],
-			election: ["Politics"],
-			president: ["Politics"],
-			biden: ["Politics"],
-			trump: ["Politics"],
-			sports: ["Sports"],
-			nba: ["Sports"],
-			basketball: ["Sports"],
-			football: ["Sports"],
-			nfl: ["Sports"],
-			soccer: ["Sports"],
-			crypto: ["Crypto"],
-			bitcoin: ["Crypto"],
-			ethereum: ["Crypto"],
-			tech: ["Tech"],
-			ai: ["Tech"],
-			technology: ["Tech"],
-		};
-
-		for (const [term, associatedTags] of Object.entries(tagMappings)) {
-			if (queryLower.includes(term)) {
-				tags.push(...associatedTags);
-			}
-		}
-
-		return [...new Set(tags)]; // Remove duplicates
-	}
-
-	/**
-	 * ULTRA SIMPLE: Just get markets and do basic text matching
-	 */
+	// ULTRA SIMPLE: Main search method
 	async searchMarketsEnhanced(
 		query: string,
 		options: {
@@ -658,351 +345,174 @@ export class PolymarketService {
 		const { limit = 8 } = options;
 
 		try {
-			console.log(`🔍 SIMPLE SEARCH: "${query}" limit=${limit}`);
+			console.log(`🔍 Searching: "${query}" (limit: ${limit})`);
 
-			const gammaMarkets = await this.getMarketsFromGamma({
-				limit: Math.max(limit * 3, 20),
-				ascending: false,
-			});
+			// Step 1: Try tag-based search
+			const tagId = this.getTag(query);
+			if (tagId) {
+				const tagResults = await this.getMarketsFromGamma({
+					tag_id: tagId,
+					limit: limit,
+				});
 
-			console.log(`📊 Got ${gammaMarkets.length} raw markets from Gamma`);
-
-			if (gammaMarkets.length === 0) {
-				console.log("❌ No markets from Gamma API");
-				return [];
+				if (tagResults.length > 0) {
+					console.log(`✅ Tag search found ${tagResults.length} markets`);
+					return this.convertToMarkets(tagResults).slice(0, limit);
+				}
 			}
 
-			// Convert to Market format first
-			const markets: Market[] = gammaMarkets.map((market) => {
-				const marketAny = market as Record<string, unknown>;
-				return {
-					id: (marketAny.id as string) || "",
-					question: (marketAny.question as string) || "",
-					description: (marketAny.description as string) || "",
-					conditionId: (marketAny.conditionId as string) || "",
-					outcomes: Array.isArray(marketAny.outcomes)
-						? (marketAny.outcomes as string[])
-						: ["Yes", "No"],
-					endDate:
-						(marketAny.endDateIso as string) ||
-						(marketAny.endDate as string) ||
-						"",
-					eventId: (marketAny.questionID as string) || "",
-					eventTitle: (marketAny.events as any[])?.[0]?.title || "",
-					category: (marketAny.events as any[])?.[0]?.ticker || "",
-					volume24hr: Number(marketAny.volume || 0),
-					liquidity: Number(marketAny.liquidity || 0),
-				};
+			// Step 2: Fallback to general search with text filter
+			console.log(`📊 Fallback search for: "${query}"`);
+			const allResults = await this.getMarketsFromGamma({
+				limit: limit * 3,
+				volume_num_min: 0.001,
 			});
 
-			// Simple text filtering - only if query is meaningful
-			let filteredMarkets = markets;
-			if (query?.trim() && query.toLowerCase() !== "market") {
+			// Simple text filtering
+			let filtered = allResults;
+			if (query && query.toLowerCase() !== "market") {
 				const queryLower = query.toLowerCase();
-				filteredMarkets = markets.filter(
-					(market) =>
-						market.question.toLowerCase().includes(queryLower) ||
-						market.description?.toLowerCase().includes(queryLower) ||
-						market.category?.toLowerCase().includes(queryLower) ||
-						market.eventTitle?.toLowerCase().includes(queryLower),
-				);
-				console.log(
-					`🎯 Text filter: ${markets.length} → ${filteredMarkets.length} markets`,
-				);
-			}
-
-			// Sort by volume (highest first) and return top results
-			filteredMarkets.sort((a, b) => (b.volume24hr || 0) - (a.volume24hr || 0));
-			const finalResults = filteredMarkets.slice(0, limit);
-
-			console.log(`✅ SIMPLE SEARCH RESULT: ${finalResults.length} markets`);
-
-			// Debug: Show what we found
-			if (finalResults.length > 0) {
-				console.log("📋 Results:");
-				finalResults.forEach((market, i) => {
-					console.log(
-						`  ${i + 1}. "${market.question}" (Vol: ${market.volume24hr})`,
-					);
+				filtered = allResults.filter((market) => {
+					const text = `${market.question} ${market.description || ""} ${
+						Array.isArray((market as any).events) && (market as any).events[0]
+							? (market as any).events[0].title || ""
+							: ""
+					}`.toLowerCase();
 				});
 			}
 
-			return finalResults;
+			console.log(`✅ Found ${filtered.length} relevant markets`);
+			return this.convertToMarkets(filtered).slice(0, limit);
 		} catch (error) {
-			console.error("❌ Simple search failed:", error);
+			console.error("❌ Search failed:", error);
 			return [];
 		}
 	}
 
+	// Helper: Convert gamma results to Market format
+	private convertToMarkets(results: any[]): Market[] {
+		return results
+			.map((market) => ({
+				id: market.id || "",
+				question: market.question || "",
+				description: market.description || "",
+				conditionId: market.conditionId || "",
+				outcomes: Array.isArray(market.outcomes)
+					? market.outcomes
+					: typeof market.outcomes === "string"
+						? JSON.parse(market.outcomes || '["Yes", "No"]')
+						: ["Yes", "No"],
+				endDate: market.endDate || market.endDateIso || "",
+				eventId: market.questionID || market.id || "",
+				eventTitle:
+					Array.isArray(market.events) && market.events[0]
+						? market.events[0].title || ""
+						: "",
+				category:
+					Array.isArray(market.events) && market.events[0]
+						? market.events[0].ticker || market.category || ""
+						: market.category || "",
+				volume24hr: Number(market.volume || 0),
+				liquidity: Number(market.liquidity || market.liquidityNum || 0),
+			}))
+			.filter((m) => m.question); // Filter out empty questions
+	}
+
+	// SIMPLIFIED: Search by interests
 	async searchMarketsByInterests(
 		interests: string[],
 		options: {
 			limit?: number;
 			knowledgeLevel?: "beginner" | "intermediate" | "advanced";
 			riskTolerance?: "conservative" | "moderate" | "aggressive";
-			sortBy?: string;
 		} = {},
 	): Promise<Market[]> {
 		const { limit = 8 } = options;
-
-		console.log(`🎯 INTEREST SEARCH: [${interests.join(", ")}]`);
-
 		const allResults: Market[] = [];
 
-		// Search for each interest individually
+		// Search each interest
 		for (const interest of interests) {
-			try {
-				const results = await this.searchMarketsEnhanced(interest, {
-					limit: 5,
-				});
-				allResults.push(...results);
-			} catch (error) {
-				console.warn(`⚠️ Interest "${interest}" failed:`, error);
-			}
+			const results = await this.searchMarketsEnhanced(interest, { limit: 5 });
+			allResults.push(...results);
 		}
 
 		// Remove duplicates and sort by volume
-		const uniqueResults = Array.from(
+		const unique = Array.from(
 			new Map(allResults.map((m) => [m.id, m])).values(),
 		);
-		uniqueResults.sort((a, b) => (b.volume24hr || 0) - (a.volume24hr || 0));
+		unique.sort((a, b) => (b.volume24hr || 0) - (a.volume24hr || 0));
 
-		return uniqueResults.slice(0, limit);
+		return unique.slice(0, limit);
 	}
 
-	/**
-	 * Basic search (fallback for CLOB when needed for specific operations)
-	 */
-	async searchMarkets(
-		query: string,
-		options: {
-			limit?: number;
-			category?: string;
-			sortBy?: string;
-		} = {},
-	): Promise<Market[]> {
-		const { limit = 10 } = options;
+	// CLOB API methods (unchanged)
+	async getMarkets(limit = 10): Promise<Market[]> {
+		await this.ensureInitialized();
+		if (!this.clobClient) throw new Error("CLOB client not initialized");
 
 		try {
-			// Get all markets from CLOB
-			const allMarkets = await this.getMarkets(50);
+			const markets = await this.clobClient.getMarkets();
+			const marketData = Array.isArray(markets) ? markets : markets?.data || [];
 
-			// Simple text matching
-			const queryLower = query.toLowerCase();
-			const matchingMarkets = allMarkets.filter(
-				(market) =>
-					market.question.toLowerCase().includes(queryLower) ||
-					market.description?.toLowerCase().includes(queryLower) ||
-					market.category?.toLowerCase().includes(queryLower),
-			);
-
-			return matchingMarkets.slice(0, limit);
+			const processedMarkets: Market[] = [];
+			for (const market of marketData.slice(0, limit)) {
+				try {
+					const rawMarket = marketSchema.parse(market);
+					processedMarkets.push({
+						id: rawMarket.condition_id,
+						conditionId: rawMarket.condition_id,
+						question: rawMarket.question,
+						endDate: rawMarket.end_date_iso || "",
+						outcomes: rawMarket.tokens.map((t) => t.outcome),
+						eventId: rawMarket.question_id || "",
+						eventTitle: "",
+						category: "",
+					});
+				} catch (error) {
+					// Skip invalid markets
+				}
+			}
+			return processedMarkets;
 		} catch (error) {
-			console.error("❌ Basic search failed:", error);
-			return [];
+			console.error("❌ Error fetching CLOB markets:", error);
+			throw error;
 		}
 	}
 
-	/**
-	 * Generate search queries from interests
-	 */
-	private generateSearchQueries(
-		interests: string[],
-		knowledgeLevel: string,
-		riskTolerance: string,
-	): string[] {
-		const queries: string[] = [];
+	async getMarketsByEvents(
+		limit = 5,
+	): Promise<{ [eventTitle: string]: Market[] }> {
+		const markets = await this.getMarkets(limit * 3);
+		const eventGroups: { [eventTitle: string]: Market[] } = {};
 
-		// Direct interest queries (most specific)
-		queries.push(...interests);
-
-		// Add more specific queries for better results
-		for (const interest of interests) {
-			// Add specific variations for better matching
-			if (interest.toLowerCase().includes("politics")) {
-				queries.push("election", "president", "congress", "policy");
-			}
-			if (interest.toLowerCase().includes("ukraine")) {
-				queries.push("russia", "ceasefire", "war", "conflict");
-			}
-			if (interest.toLowerCase().includes("crypto")) {
-				queries.push("bitcoin", "ethereum", "blockchain");
-			}
-			if (interest.toLowerCase().includes("sports")) {
-				queries.push(
-					"basketball",
-					"football",
-					"baseball",
-					"soccer",
-					"boxing",
-					"ufc",
-					"mma",
-					"golf",
-					"tennis",
-					"manchester",
-					"ryder cup",
-					"championship",
-					"olympics",
-				);
-			}
+		for (const market of markets) {
+			const eventKey = market.eventTitle || market.category || "Other Markets";
+			if (!eventGroups[eventKey]) eventGroups[eventKey] = [];
+			eventGroups[eventKey].push(market);
 		}
 
-		// Add related terms based on knowledge level (only for advanced)
-		if (knowledgeLevel === "advanced") {
-			queries.push(...interests.map((i) => `${i} analysis`));
-		}
-
-		return [...new Set(queries)]; // Remove duplicates
-	}
-
-	/**
-	 * Calculate relevance score for a market
-	 */
-	private calculateRelevanceScore(
-		market: Market,
-		query: string,
-		category?: string,
-	): number {
-		let score = 0;
-		const queryLower = query.toLowerCase();
-		const questionLower = market.question.toLowerCase();
-
-		// Exact matches get highest score
-		if (questionLower.includes(queryLower)) {
-			score += 0.8;
-		}
-
-		// Category match
-		if (category && market.category?.toLowerCase() === category.toLowerCase()) {
-			score += 0.3;
-		}
-
-		// Word matches
-		const queryWords = queryLower.split(" ");
-		const questionWords = questionLower.split(" ");
-		const matchingWords = queryWords.filter((word) =>
-			questionWords.some((qw) => qw.includes(word)),
-		);
-		score += (matchingWords.length / queryWords.length) * 0.5;
-
-		// Special handling for sports terms
-		if (queryLower.includes("sports")) {
-			const sportsTerms = [
-				"boxing",
-				"ufc",
-				"mma",
-				"golf",
-				"tennis",
-				"manchester",
-				"ryder",
-				"championship",
-				"olympics",
-				"basketball",
-				"football",
-				"soccer",
-			];
-			const hasSportsTerm = sportsTerms.some((term) =>
-				questionLower.includes(term),
+		return Object.keys(eventGroups)
+			.slice(0, limit)
+			.reduce(
+				(result, key) => {
+					result[key] = eventGroups[key];
+					return result;
+				},
+				{} as { [eventTitle: string]: Market[] },
 			);
-			if (hasSportsTerm) {
-				score += 0.3; // Boost for sports-related markets
-			}
-		}
-
-		// Special handling for politics terms
-		if (queryLower.includes("politics")) {
-			const politicsTerms = [
-				"election",
-				"democratic",
-				"republican",
-				"congress",
-				"senate",
-				"house",
-				"president",
-				"mayor",
-				"governor",
-				"party",
-				"vote",
-				"campaign",
-				"primary",
-				"general",
-				"midterm",
-				"democrat",
-				"republican",
-				"nato",
-				"policy",
-				"government",
-			];
-			const hasPoliticsTerm = politicsTerms.some((term) =>
-				questionLower.includes(term),
-			);
-			if (hasPoliticsTerm) {
-				score += 0.8; // High boost for politics-related markets
-			}
-		}
-
-		return Math.min(score, 1.0);
 	}
 
-	/**
-	 * Calculate popularity score
-	 */
-	private calculatePopularityScore(market: Record<string, unknown>): number {
-		const volume = Number(market.volume24hr || 0);
-		const liquidity = Number(market.liquidity || 0);
-
-		// Normalize scores (simplified)
-		return volume / 10000 + liquidity / 5000;
-	}
-
-	/**
-	 * Sort enhanced markets by strategy
-	 */
-	private sortEnhancedMarkets(
-		markets: EnhancedMarket[],
-		sortBy: string,
-	): EnhancedMarket[] {
-		switch (sortBy) {
-			case "popularity":
-				return markets.sort(
-					(a, b) => (b.popularityScore || 0) - (a.popularityScore || 0),
-				);
-			case "volume":
-				return markets.sort(
-					(a, b) => (b.volume24hr || 0) - (a.volume24hr || 0),
-				);
-			case "liquidity":
-				return markets.sort((a, b) => (b.liquidity || 0) - (a.liquidity || 0));
-			default:
-				return markets.sort((a, b) => b.relevanceScore - a.relevanceScore);
-		}
-	}
-
-	/**
-	 * Get specific market by condition ID (uses CLOB for detailed data)
-	 */
 	async getMarket(conditionId: string): Promise<Market> {
 		await this.ensureInitialized();
-
-		if (!this.clobClient) {
-			throw new Error("CLOB client not initialized");
-		}
+		if (!this.clobClient) throw new Error("CLOB client not initialized");
 
 		try {
 			const market = await this.clobClient.getMarket(conditionId);
-			console.log("🔍 CLOB API response for conditionId:", conditionId);
-			console.log("🔍 Raw market response:", JSON.stringify(market, null, 2));
-
-			// Check if the response contains an error before parsing
 			if (market && typeof market === "object" && "error" in market) {
-				throw new Error(
-					`Market not found in CLOB: ${conditionId}. ${market.error}`,
-				);
+				throw new Error(`Market not found: ${conditionId}`);
 			}
 
-			console.log("🔍 Attempting to parse with marketSchema...");
 			const rawMarket = marketSchema.parse(market);
-			// Convert CLOB API response to Market format
 			return {
 				id: rawMarket.condition_id,
 				question: rawMarket.question,
@@ -1020,43 +530,22 @@ export class PolymarketService {
 		}
 	}
 
-	/**
-	 * Get raw market data including token IDs (uses CLOB)
-	 */
 	async getRawMarket(conditionId: string): Promise<{
 		market: Market;
 		tokens: Array<{ token_id: string; outcome: string }>;
 	}> {
 		await this.ensureInitialized();
-
-		if (!this.clobClient) {
-			throw new Error("CLOB client not initialized");
-		}
+		if (!this.clobClient) throw new Error("CLOB client not initialized");
 
 		try {
 			const market = await this.clobClient.getMarket(conditionId);
-			console.log(
-				"🔍 getRawMarket - CLOB API response for conditionId:",
-				conditionId,
-			);
-			console.log(
-				"🔍 getRawMarket - Raw market response:",
-				JSON.stringify(market, null, 2),
-			);
-
-			// Check if the response contains an error before parsing
 			if (market && typeof market === "object" && "error" in market) {
-				throw new Error(
-					`Market not found in CLOB: ${conditionId}. ${market.error}`,
-				);
+				throw new Error(`Market not found: ${conditionId}`);
 			}
 
-			console.log("🔍 getRawMarket - Attempting to parse with marketSchema...");
 			const rawMarket = marketSchema.parse(market);
-
-			// Convert CLOB API response to Market format
 			const processedMarket = {
-				id: rawMarket.condition_id, // Use condition_id as id since CLOB API doesn't provide separate id
+				id: rawMarket.condition_id,
 				question: rawMarket.question,
 				description: rawMarket.description || "",
 				endDate: rawMarket.end_date_iso || "",
@@ -1077,15 +566,9 @@ export class PolymarketService {
 		}
 	}
 
-	/**
-	 * Get order book for a specific token (uses CLOB)
-	 */
 	async getOrderBook(tokenId: string): Promise<OrderBook> {
 		await this.ensureInitialized();
-
-		if (!this.clobClient) {
-			throw new Error("CLOB client not initialized");
-		}
+		if (!this.clobClient) throw new Error("CLOB client not initialized");
 
 		try {
 			const orderBook = await this.clobClient.getOrderBook(tokenId);
@@ -1096,58 +579,75 @@ export class PolymarketService {
 		}
 	}
 
-	/**
-	 * Check USDC balance and allowances for buy orders
-	 */
+	// Trading methods
 	async checkBuyOrderRequirements(
 		orderValue: number,
 	): Promise<OrderRequirements> {
 		await this.ensureInitialized();
 
-		if (!this.clobClient || !this.wallet) {
+		if (!this.clobClient || !this.wallet || !this.apiKeyCreds) {
 			return {
 				canPlace: false,
-				error: "CLOB client or wallet not initialized",
+				error:
+					"CLOB client, wallet, or API credentials not properly initialized",
 			};
 		}
 
 		try {
-			// Get USDC balance
-			const balance = await this.clobClient.getBalanceAllowance();
-			const usdcBalance = Number(balance) || 0; // Assuming balance is in USDC
+			console.log(`💰 Checking balance for order value: $${orderValue}`);
 
-			// Check if balance is sufficient
-			const canPlace = usdcBalance >= orderValue;
-			const maxOrderSize = Math.min(usdcBalance, orderValue);
+			const balanceResponse = await this.clobClient.getBalanceAllowance({
+				asset_type: AssetType.COLLATERAL,
+			});
+
+			const usdcBalance = Number(balanceResponse.balance) || 0;
+
+			// Handle the allowances object structure (the actual response has allowances, not allowance)
+			let allowance = 0;
+			if (
+				"allowances" in balanceResponse &&
+				balanceResponse.allowances &&
+				typeof balanceResponse.allowances === "object"
+			) {
+				// Sum up all allowances
+				allowance = Object.values(balanceResponse.allowances).reduce(
+					(sum: number, val: unknown) => {
+						return sum + (Number(val) || 0);
+					},
+					0,
+				);
+			} else if ("allowance" in balanceResponse && balanceResponse.allowance) {
+				allowance = Number(balanceResponse.allowance) || 0;
+			}
+
+			console.log(`✅ Current balance: $${usdcBalance}`);
+			console.log(`✅ Current allowance: $${allowance}`);
+
+			const canPlace = usdcBalance >= orderValue && allowance >= orderValue;
+			const maxOrderSize = Math.min(usdcBalance, allowance, orderValue);
 
 			return {
 				canPlace,
 				balance: usdcBalance,
+				allowance,
 				maxOrderSize,
 				error: canPlace
 					? undefined
-					: `Insufficient USDC balance. Balance: ${usdcBalance}, Required: ${orderValue}`,
+					: `Insufficient balance/allowance: Balance $${usdcBalance}, Allowance $${allowance} < $${orderValue}`,
 			};
 		} catch (error) {
+			console.error("❌ Balance check error:", error);
 			return {
 				canPlace: false,
-				error:
-					error instanceof Error
-						? error.message
-						: "Failed to check requirements",
+				error: `Balance check failed: ${error instanceof Error ? error.message : "Unknown error"}`,
 			};
 		}
 	}
-
-	/**
-	 * Check token balance for sell orders
-	 */
 	async checkSellOrderRequirements(
 		tokenId: string,
 		size: number,
 	): Promise<OrderRequirements> {
 		await this.ensureInitialized();
-
 		if (!this.clobClient || !this.wallet) {
 			return {
 				canPlace: false,
@@ -1155,96 +655,73 @@ export class PolymarketService {
 			};
 		}
 
-		try {
-			// Get token balance (placeholder - actual implementation depends on CLOB client API)
-			const balance = 0; // await this.clobClient.getTokenBalance(tokenId);
-			const tokenBalance = Number(balance);
-
-			// Check if balance is sufficient
-			const canPlace = tokenBalance >= size;
-			const maxOrderSize = Math.min(tokenBalance, size);
-
-			return {
-				canPlace,
-				balance: tokenBalance,
-				maxOrderSize,
-				error: canPlace
-					? undefined
-					: `Insufficient token balance. Max sell size: ${maxOrderSize}`,
-			};
-		} catch (error) {
-			return {
-				canPlace: false,
-				error:
-					error instanceof Error
-						? error.message
-						: "Failed to check requirements",
-			};
-		}
+		// Placeholder - actual implementation depends on CLOB client API
+		return {
+			canPlace: false,
+			error: "Token balance checking not implemented",
+		};
 	}
 
-	/**
-	 * Create a buy order with enhanced validation
-	 */
-	async createBuyOrder(
+	// ✅ MARKET ORDER METHODS (following official docs)
+	async createMarketBuyOrder(
 		tokenId: string,
-		price: number,
-		size: number,
+		amount: number, // Amount in USD
 		options: { skipValidation?: boolean } = {},
 	): Promise<OrderResponse> {
 		await this.ensureInitialized();
 
-		if (!this.clobClient || !this.wallet) {
-			throw new Error("CLOB client or wallet not initialized");
+		if (!this.clobClient || !this.wallet || !this.apiKeyCreds) {
+			throw new Error(
+				"CLOB client, wallet, or API credentials not properly initialized",
+			);
 		}
-		console.log("🔍 Creating buy order for tokenId:", tokenId);
 
-		// Enhanced validation unless explicitly skipped
+		// Validation
 		if (!options.skipValidation) {
-			const orderValue = price * size;
-			const requirements = await this.checkBuyOrderRequirements(orderValue);
-
+			console.log("🔍 Validating market buy order requirements...");
+			const requirements = await this.checkBuyOrderRequirements(amount);
 			if (!requirements.canPlace) {
-				console.log(
-					"❌ Order validation failed for requirements:",
-					requirements,
-				);
 				return {
 					success: false,
 					error: requirements.error || "Order validation failed",
-					validationDetails: {
-						orderValue,
-						maxOrderSize: requirements.maxOrderSize,
-						balance: requirements.balance,
-					},
 				};
 			}
+			console.log("✅ Validation passed");
 		}
 
 		try {
-			const order = await this.clobClient.createOrder({
+			console.log(`📝 Creating market buy order: $${amount} USD`);
+
+			const marketOrder = await this.clobClient.createMarketBuyOrder({
 				tokenID: tokenId,
-				price,
-				side: Side.BUY,
-				size,
+				amount, // Amount in USD
 				feeRateBps: 0,
+				nonce: Date.now(),
+				price: 0.5, // Default price, will be filled at market
 			});
 
-			const response = await this.clobClient.postOrder(order);
+			console.log("📤 Posting FOK market buy order to exchange...");
+			const response = await this.clobClient.postOrder(
+				marketOrder,
+				OrderType.FOK,
+			);
+
+			console.log("✅ Market buy order created successfully!");
+
 			return {
 				success: true,
 				orderId: response.orderID || response.id,
-				message: "Buy order created successfully",
+				message: "Market buy order created successfully",
 				orderDetails: {
 					tokenId,
-					price,
-					size,
+					price: 0.5, // Market price
+					size: amount, // Amount in USD
 					side: "BUY",
-					totalValue: price * size,
+					totalValue: amount,
 				},
 			};
 		} catch (error) {
-			console.error("Error creating buy order:", error);
+			console.error("❌ Market buy order failed:", error);
 			return {
 				success: false,
 				error: error instanceof Error ? error.message : "Unknown error",
@@ -1252,62 +729,52 @@ export class PolymarketService {
 		}
 	}
 
-	/**
-	 * Create a sell order with enhanced validation
-	 */
-	async createSellOrder(
+	async createMarketSellOrder(
 		tokenId: string,
-		price: number,
-		size: number,
+		shares: number, // Number of shares to sell
 		options: { skipValidation?: boolean } = {},
 	): Promise<OrderResponse> {
 		await this.ensureInitialized();
 
-		if (!this.clobClient || !this.wallet) {
-			throw new Error("CLOB client or wallet not initialized");
-		}
-
-		// Enhanced validation unless explicitly skipped
-		if (!options.skipValidation) {
-			const requirements = await this.checkSellOrderRequirements(tokenId, size);
-
-			if (!requirements.canPlace) {
-				return {
-					success: false,
-					error: requirements.error || "Sell order validation failed",
-					validationDetails: {
-						requestedSize: size,
-						maxOrderSize: requirements.maxOrderSize,
-						balance: requirements.balance,
-					},
-				};
-			}
+		if (!this.clobClient || !this.wallet || !this.apiKeyCreds) {
+			throw new Error(
+				"CLOB client, wallet, or API credentials not properly initialized",
+			);
 		}
 
 		try {
+			console.log(`📝 Creating market sell order: ${shares} shares`);
+
+			// For market sell orders, we need to use regular createOrder with market price
+			// and then post as FOK (Fill or Kill)
 			const order = await this.clobClient.createOrder({
 				tokenID: tokenId,
-				price,
+				price: 0.01, // Use minimum price for market sell
 				side: Side.SELL,
-				size,
+				size: shares,
 				feeRateBps: 0,
+				nonce: Date.now(),
 			});
 
-			const response = await this.clobClient.postOrder(order);
+			console.log("📤 Posting FOK market sell order to exchange...");
+			const response = await this.clobClient.postOrder(order, OrderType.FOK);
+
+			console.log("✅ Market sell order created successfully!");
+
 			return {
 				success: true,
 				orderId: response.orderID || response.id,
-				message: "Sell order created successfully",
+				message: "Market sell order created successfully",
 				orderDetails: {
 					tokenId,
-					price,
-					size,
+					price: 0.01, // Market price
+					size: shares,
 					side: "SELL",
-					totalValue: price * size,
+					totalValue: shares * 0.01, // Approximate value
 				},
 			};
 		} catch (error) {
-			console.error("Error creating sell order:", error);
+			console.error("❌ Market sell order failed:", error);
 			return {
 				success: false,
 				error: error instanceof Error ? error.message : "Unknown error",
@@ -1315,69 +782,144 @@ export class PolymarketService {
 		}
 	}
 
-	/**
-	 * Get user's orders (placeholder implementation)
-	 */
-	async getUserOrders(): Promise<OrderResponse[]> {
+	// ✅ GTD ORDER METHOD (Good Till Date)
+	async createGTDOrder(
+		tokenId: string,
+		price: number,
+		size: number,
+		side: Side,
+		expirationMinutes = 1,
+		options: { skipValidation?: boolean } = {},
+	): Promise<OrderResponse> {
 		await this.ensureInitialized();
 
+		if (!this.clobClient || !this.wallet || !this.apiKeyCreds) {
+			throw new Error(
+				"CLOB client, wallet, or API credentials not properly initialized",
+			);
+		}
+
+		// Validation
+		if (!options.skipValidation && side === Side.BUY) {
+			console.log("🔍 Validating GTD buy order requirements...");
+			const requirements = await this.checkBuyOrderRequirements(price * size);
+			if (!requirements.canPlace) {
+				return {
+					success: false,
+					error: requirements.error || "Order validation failed",
+				};
+			}
+			console.log("✅ Validation passed");
+		}
+
+		try {
+			// Calculate expiration (following docs pattern)
+			const oneMinute = 60 * 1000;
+			const additionalSeconds = expirationMinutes * 60 * 1000;
+			const expiration = Number.parseInt(
+				(
+					(new Date().getTime() + oneMinute + additionalSeconds) /
+					1000
+				).toString(),
+			);
+
+			console.log(
+				`📝 Creating GTD ${side} order: ${size} shares at $${price} (expires in ${expirationMinutes} minutes)`,
+			);
+
+			const order = await this.clobClient.createOrder({
+				tokenID: tokenId,
+				price,
+				side,
+				size,
+				feeRateBps: 0,
+				nonce: Date.now(),
+				expiration,
+			});
+
+			console.log("📤 Posting GTD order to exchange...");
+			const response = await this.clobClient.postOrder(order, OrderType.GTD);
+
+			console.log("✅ GTD order created successfully!");
+
+			return {
+				success: true,
+				orderId: response.orderID || response.id,
+				message: `GTD ${side} order created successfully`,
+				orderDetails: {
+					tokenId,
+					price,
+					size,
+					side: side.toString(),
+					totalValue: price * size,
+				},
+			};
+		} catch (error) {
+			console.error("❌ GTD order failed:", error);
+			return {
+				success: false,
+				error: error instanceof Error ? error.message : "Unknown error",
+			};
+		}
+	}
+
+	async getUserOrders(): Promise<OrderResponse[]> {
+		await this.ensureInitialized();
 		if (!this.clobClient || !this.wallet) {
 			throw new Error("CLOB client or wallet not initialized");
 		}
-
-		// Placeholder - actual implementation depends on CLOB client API
-		return [];
+		return []; // Placeholder
 	}
 
-	/**
-	 * Check if client is ready for trading
-	 */
+	// Utility methods
+	// ✅ ENHANCED READY CHECK
 	isReadyForTrading(): boolean {
-		return !!(this.clobClient && this.wallet && this.isInitialized);
+		const hasClient = !!this.clobClient;
+		const hasWallet = !!this.wallet;
+		const hasApiKey = !!this.apiKeyCreds;
+		const isInit = this.isInitialized;
+
+		// Only log missing components if we're past initialization
+		if (isInit) {
+			if (!hasClient) console.log("❌ Missing: CLOB client");
+			if (!hasWallet) console.log("❌ Missing: Wallet");
+			if (!hasApiKey) console.log("❌ Missing: API credentials");
+		}
+
+		return hasClient && hasWallet && hasApiKey && isInit;
 	}
 
-	/**
-	 * Check if trading is available
-	 */
 	canTrade(): boolean {
-		return !!(this.clobClient && this.wallet && this.isInitialized);
+		return !!(
+			this.clobClient &&
+			this.wallet &&
+			this.apiKeyCreds &&
+			this.isInitialized
+		);
 	}
-
-	/**
-	 * Get wallet address
-	 */
 	getWalletAddress(): string | null {
 		return this.wallet?.address || null;
 	}
 
-	/**
-	 * Get token holders from Polymarket Data API
-	 * This uses the REST API, not CLOB, so works without authentication
-	 */
-	async getTokenHolders(tokenId: string) {
-		try {
-			const url = `https://data-api.polymarket.com/holders?token=${tokenId}`;
-			console.log(`🔍 Fetching token holders from: ${url}`);
-
-			const response = await fetch(url);
-			if (!response.ok) {
-				throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-			}
-
-			const data = await response.json();
-			console.log("✅ Fetched token holders data");
-
-			return data;
-		} catch (error) {
-			console.error("❌ Error fetching token holders:", error);
-			throw error;
-		}
+	// ✅ DEBUG: Get initialization status
+	getInitializationStatus(): {
+		isInitialized: boolean;
+		hasWallet: boolean;
+		hasApiKey: boolean;
+		hasClient: boolean;
+		walletAddress: string | null;
+		apiKeyId: string | null;
+	} {
+		return {
+			isInitialized: this.isInitialized,
+			hasWallet: !!this.wallet,
+			hasApiKey: !!this.apiKeyCreds,
+			hasClient: !!this.clobClient,
+			walletAddress: this.wallet?.address || null,
+			apiKeyId: this.apiKeyCreds?.key || null,
+		};
 	}
 
-	/**
-	 * Get user positions from Polymarket Data API
-	 * This uses the REST API, not CLOB, so works without authentication
-	 */
 	async getUserPositions(
 		userAddress: string,
 		options: {
@@ -1386,57 +928,39 @@ export class PolymarketService {
 			eventId?: string;
 			market?: string;
 			redeemable?: boolean;
-			sortBy?:
-				| "TOKENS"
-				| "CURRENT"
-				| "INITIAL"
-				| "CASHPNL"
-				| "PERCENTPNL"
-				| "TITLE"
-				| "RESOLVING"
-				| "PRICE";
-			sortDirection?: "ASC" | "DESC";
+			sortBy?: string;
+			sortDirection?: string;
 		} = {},
 	) {
-		try {
-			const {
-				limit = 50,
-				sizeThreshold = 1,
-				eventId,
-				market,
-				redeemable,
-				sortBy = "CURRENT",
-				sortDirection = "DESC",
-			} = options;
+		const {
+			limit = 50,
+			sizeThreshold = 1,
+			eventId,
+			market,
+			redeemable,
+			sortBy = "CURRENT",
+			sortDirection = "DESC",
+		} = options;
 
-			const params = new URLSearchParams({
-				user: userAddress,
-				limit: limit.toString(),
-				sizeThreshold: sizeThreshold.toString(),
-				sortBy,
-				sortDirection,
-			});
+		const params = new URLSearchParams({
+			user: userAddress,
+			limit: limit.toString(),
+			sizeThreshold: sizeThreshold.toString(),
+			sortBy,
+			sortDirection,
+		});
 
-			if (eventId) params.append("eventId", eventId);
-			if (market) params.append("market", market);
-			if (redeemable !== undefined)
-				params.append("redeemable", redeemable.toString());
+		if (eventId) params.append("eventId", eventId);
+		if (market) params.append("market", market);
+		if (redeemable !== undefined)
+			params.append("redeemable", redeemable.toString());
 
-			const url = `https://data-api.polymarket.com/positions?${params}`;
-			console.log(`🔍 Fetching user positions from: ${url}`);
-
-			const response = await fetch(url);
-			if (!response.ok) {
-				throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-			}
-
-			const positions = await response.json();
-			console.log(`✅ Fetched ${positions.length} positions for user`);
-
-			return positions;
-		} catch (error) {
-			console.error("❌ Error fetching user positions:", error);
-			throw error;
+		const url = `https://data-api.polymarket.com/positions?${params}`;
+		const response = await fetch(url);
+		if (!response.ok) {
+			throw new Error(`HTTP ${response.status}: ${response.statusText}`);
 		}
+
+		return await response.json();
 	}
 }

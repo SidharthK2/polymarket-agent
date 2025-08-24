@@ -4,65 +4,111 @@ import { env } from "../env";
 
 function parseMarketsFromResponse(response: string): Market[] {
 	const markets: Market[] = [];
+	console.log("🔍 Parsing response for markets...");
 
-	// Split by market entries (look for 🆔 Market ID: pattern)
-	const marketBlocks = response.split(/(?=🆔 Market ID:)/);
+	// Your format: numbered list with bullet points and backticks
+	// 1.  **Question**
+	//     *   Volume: $X | Liquidity: $Y
+	//     *   Ends: Date
+	//     *   Condition ID: `0x...`
 
-	for (const block of marketBlocks) {
-		if (!block.trim()) continue;
+	const lines = response.split("\n");
+	let currentMarket: any = null;
 
-		try {
-			// Extract market ID (conditionId)
-			const idMatch = block.match(/(?:Market ID|ID):\s*([0-9a-fx]+)/i);
-			const id = idMatch?.[1]?.trim() || "";
+	for (let i = 0; i < lines.length; i++) {
+		const line = lines[i].trim();
 
-			// Extract conditionId (look for IMPORTANT: Condition ID: pattern)
-			const conditionIdMatch = block.match(
-				/IMPORTANT:\s*Condition ID:\s*([0-9a-fx]+)/i,
-			);
-			const conditionId = conditionIdMatch?.[1]?.trim() || "";
-
-			// Extract question (look for **Question:** pattern)
-			const questionMatch = block.match(/\*\*Question:\*\*\s*([^\n]+)/i);
-			const question = questionMatch?.[1]?.trim() || "";
-
-			// Extract end date (look for **End Date:** pattern)
-			const endDateMatch = block.match(/\*\*End Date:\*\*\s*([^\n]+)/i);
-			const endDate = endDateMatch?.[1]?.trim() || "";
-
-			// Extract category (look for **Category:** pattern)
-			const categoryMatch = block.match(/\*\*Category:\*\*\s*([^\n]+)/i);
-			const category = categoryMatch?.[1]?.trim() || "";
-
-			// Extract volume
-			const volumeMatch = block.match(/Volume:\s*\$?([\d,]+)/i);
-			const volume24hr = volumeMatch
-				? Number.parseInt(volumeMatch[1].replace(/,/g, ""))
-				: 0;
-
-			if (conditionId && question) {
-				markets.push({
-					id: id,
-					question,
-					conditionId,
-					outcomes: ["Yes", "No"], // Default - could be parsed more sophisticatedly
-					endDate,
-					category,
-					volume24hr,
-				});
+		// Start of new market: "1.  **Question**"
+		if (/^\d+\.\s+\*\*/.test(line)) {
+			// Save previous market if valid
+			if (currentMarket?.conditionId && currentMarket?.question) {
+				markets.push(currentMarket);
+				console.log(
+					`✅ Added market: ${currentMarket.question.substring(0, 30)}...`,
+				);
 			}
-		} catch (parseError) {
-			console.warn("Failed to parse market block:", block.substring(0, 100));
+
+			// Start new market
+			const questionMatch = line.match(/^\d+\.\s+\*\*(.+?)\*\*/);
+			currentMarket = {
+				question: questionMatch?.[1]?.trim() || "",
+				outcomes: ["Yes", "No"],
+				id: "",
+				conditionId: "",
+			};
+			console.log(`🆕 Started parsing: ${currentMarket.question}`);
+		}
+
+		// Parse bullet point lines starting with "*"
+		if (line.startsWith("*") && currentMarket) {
+			// Volume line: "*   Volume: $98,649.223 | Liquidity: $2,490.914"
+			if (line.includes("Volume:")) {
+				const volumeMatch = line.match(/Volume:\s*\$?([\d,]+(?:\.\d+)?)/);
+				if (volumeMatch) {
+					currentMarket.volume24hr = Number.parseFloat(
+						volumeMatch[1].replace(/,/g, ""),
+					);
+					console.log(`💰 Found Volume: ${currentMarket.volume24hr}`);
+				}
+			}
+
+			// End date line: "*   Ends: 9/30/2025"
+			if (line.includes("Ends:")) {
+				const endMatch = line.match(/Ends:\s*([^\n]+)/);
+				if (endMatch) {
+					currentMarket.endDate = endMatch[1].trim();
+					console.log(`📅 Found End Date: ${currentMarket.endDate}`);
+				}
+			}
+
+			// Condition ID line: "*   Condition ID: `0x...`"
+			if (line.includes("Condition ID:")) {
+				// Handle backticks: `0x...` or just 0x...
+				const conditionMatch = line.match(
+					/Condition ID:\s*`?(0x[a-fA-F0-9]+)`?/,
+				);
+				if (conditionMatch) {
+					currentMarket.conditionId = conditionMatch[1];
+					console.log(`🔗 Found Condition ID: ${currentMarket.conditionId}`);
+				}
+			}
+
+			// Market ID line: "*   Market ID: 547685"
+			if (line.includes("Market ID:")) {
+				const idMatch = line.match(/Market ID:\s*(\d+)/);
+				if (idMatch) {
+					currentMarket.id = idMatch[1];
+					console.log(`📊 Found Market ID: ${currentMarket.id}`);
+				}
+			}
+		}
+
+		// Handle "End date TBD" format
+		if (line.includes("End date TBD") && currentMarket) {
+			currentMarket.endDate = "TBD";
 		}
 	}
 
+	// Don't forget the last market
+	if (currentMarket?.conditionId && currentMarket?.question) {
+		markets.push(currentMarket);
+		console.log(
+			`✅ Added final market: ${currentMarket.question.substring(0, 30)}...`,
+		);
+	}
+
+	console.log(`🎯 TOTAL PARSED: ${markets.length} markets`);
+
+	// Debug output with more detail
+	markets.forEach((m, i) => {
+		console.log(`  ${i + 1}. "${m.question.substring(0, 40)}..."`);
+		console.log(`     📊 ID: ${m.id || "N/A"}`);
+		console.log(`     🔗 ConditionID: ${m.conditionId}`);
+		console.log(`     💰 Volume: ${m.volume24hr || "N/A"}`);
+	});
+
 	return markets;
 }
-
-type AgentRunner = {
-	ask: (message: string) => Promise<string>;
-};
-
 interface Market {
 	id: string;
 	question: string;
@@ -143,16 +189,38 @@ export async function createOnboardingCoordinator(subAgents: {
 				const searchQuery =
 					args.query || userProfile?.interests?.join(" ") || "popular markets";
 
+				console.log(`🔍 Searching for: "${searchQuery}"`);
+
 				const response = await subAgents.marketRecommender.ask(
 					`Find markets for query: "${searchQuery}". User profile: ${JSON.stringify(userProfile)}. Limit: 8. Ensure conditionIds are included.`,
 				);
 
-				console.log("response", response);
+				console.log(
+					"📝 Market recommender response:",
+					`${response.substring(0, 300)}...`,
+				);
 
 				const markets = parseMarketsFromResponse(response);
-				console.log("parsed markets", markets);
-				context.state.set("availableMarkets", markets);
-				context.state.set("lastSearchQuery", searchQuery);
+				console.log("📊 Parsed markets count:", markets.length);
+				console.log(
+					"📊 First market:",
+					markets[0]
+						? {
+								id: markets[0].id,
+								conditionId: markets[0].conditionId,
+								question: `${markets[0].question.substring(0, 50)}...`,
+							}
+						: "No markets parsed",
+				);
+
+				// Store in ADK state
+				await context.state.set("availableMarkets", markets);
+				await context.state.set("lastSearchQuery", searchQuery);
+
+				console.log(
+					"💾 Stored in state - availableMarkets count:",
+					markets.length,
+				);
 
 				return response;
 			} catch (error) {
@@ -166,41 +234,79 @@ export async function createOnboardingCoordinator(subAgents: {
 		name: "select_market_for_trading",
 		description: "Select a specific market and prepare it for trading",
 		schema: z.object({
-			//use refine to clean any leading and trailing spaces and double stars
-			conditionId: z
-				.string()
-				.describe("Condition ID to select")
-				.refine((id) => {
-					return id
-						.trim()
-						.replace(/^\*\*\s*/, "")
-						.replace(/\s*\*\*$/, "");
-				}),
+			conditionId: z.string().describe("Condition ID to select (0x... format)"),
 		}),
 		fn: async (args: { conditionId: string }, context) => {
 			try {
+				console.log("🎯 Selecting market with conditionId:", args.conditionId);
+
 				// Get available markets from ADK state
 				const availableMarkets = (await context.state.get(
 					"availableMarkets",
 				)) as Market[];
-
-				console.debug("args", args);
-				console.debug("availableMarkets from state", availableMarkets);
-
-				// Check if markets are available
-				if (!Array.isArray(availableMarkets)) {
-					return "❌ No markets available. Please search for markets first using 'recommend markets'.";
-				}
-
-				const market = availableMarkets.find(
-					(m) =>
-						m.conditionId === args.conditionId ||
-						m.conditionId === `** ${args.conditionId}` ||
-						m.conditionId.replace(/^\*\*\s*/, "") === args.conditionId,
+				console.log(
+					"📊 Available markets from state:",
+					availableMarkets?.length || 0,
 				);
 
+				// Enhanced market finding logic
+				let market: Market | undefined;
+
+				if (Array.isArray(availableMarkets) && availableMarkets.length > 0) {
+					// Try exact conditionId match
+					market = availableMarkets.find(
+						(m) => m.conditionId === args.conditionId,
+					);
+
+					// Try cleaned conditionId match (remove formatting)
+					if (!market) {
+						const cleanConditionId = args.conditionId
+							.replace(/^\*\*\s*/, "")
+							.replace(/\s*\*\*$/, "")
+							.trim();
+						market = availableMarkets.find(
+							(m) => m.conditionId === cleanConditionId,
+						);
+					}
+
+					// Try finding by ID if conditionId doesn't work
+					if (!market) {
+						market = availableMarkets.find((m) => m.id === args.conditionId);
+					}
+
+					console.log(
+						"🔍 Market search result:",
+						market ? "Found" : "Not found",
+					);
+					if (market) {
+						console.log("✅ Found market:", {
+							id: market.id,
+							conditionId: market.conditionId,
+							question: `${market.question.substring(0, 50)}...`,
+						});
+					}
+				}
+
 				if (!market) {
-					return "❌ Market not found. Please search for markets first or select from the recommended list.";
+					// Fallback: Try to get market directly from trading agent
+					console.log("🔄 Fallback: Getting market details directly");
+
+					const directResponse = await subAgents.tradingAgent.ask(
+						`Get market details directly using SELECT_MARKET_FOR_TRADING with marketId: ${args.conditionId}. This is a direct lookup, not from stored markets.`,
+					);
+
+					// Create a basic market object for state storage
+					const fallbackMarket: Market = {
+						id: args.conditionId,
+						conditionId: args.conditionId,
+						question: "Selected Market", // Will be updated by trading agent response
+						outcomes: ["Yes", "No"],
+					};
+
+					await context.state.set("selectedMarket", fallbackMarket);
+					console.log("💾 Stored fallback market in selectedMarket state");
+
+					return directResponse;
 				}
 
 				// Get detailed trading information
@@ -209,17 +315,23 @@ export async function createOnboardingCoordinator(subAgents: {
 						`Market question: "${market.question}". ` +
 						`Available outcomes: ${market.outcomes.join(", ")}.`,
 				);
-				console.log(" selected market response", response);
+
+				console.log(
+					"📈 Trading agent response preview:",
+					`${response.substring(0, 200)}...`,
+				);
 
 				// Store selected market in ADK state
-				context.state.set("selectedMarket", market);
-
-				console.log("✅ Selected market for trading:", market.question);
+				await context.state.set("selectedMarket", market);
+				console.log(
+					"✅ Selected market for trading:",
+					`${market.question.substring(0, 50)}...`,
+				);
 
 				return response;
 			} catch (error) {
 				console.error("❌ Error in select_market_for_trading:", error);
-				return "❌ Failed to prepare market for trading. Please try again.";
+				return "❌ Failed to prepare market for trading. Please try again or search for markets first.";
 			}
 		},
 	});
@@ -232,17 +344,28 @@ export async function createOnboardingCoordinator(subAgents: {
 		}),
 		fn: async (args: { action: string }, context) => {
 			try {
+				console.log("⚡ Executing trading action:", args.action);
+
 				const selectedMarket = (await context.state.get(
 					"selectedMarket",
 				)) as Market;
+				console.log(
+					"📊 Selected market from state:",
+					selectedMarket ? "Found" : "Not found",
+				);
 
 				if (!selectedMarket) {
-					return "❌ No market selected. Please choose a market first.";
+					return "❌ No market selected. Please choose a market first using a condition ID.";
 				}
 
 				if (!selectedMarket.conditionId) {
-					return "❌ Selected market not available for trading.";
+					return "❌ Selected market not available for trading (missing conditionId).";
 				}
+
+				console.log("🎯 Trading on market:", {
+					conditionId: selectedMarket.conditionId,
+					question: `${selectedMarket.question.substring(0, 50)}...`,
+				});
 
 				const response = await subAgents.tradingAgent.ask(
 					`Execute trading action: "${args.action}" ` +
@@ -252,7 +375,6 @@ export async function createOnboardingCoordinator(subAgents: {
 				);
 
 				console.log(`✅ Executed trading action: ${args.action}`);
-
 				return response;
 			} catch (error) {
 				console.error("❌ Error in execute_trading_action:", error);
@@ -261,43 +383,42 @@ export async function createOnboardingCoordinator(subAgents: {
 		},
 	});
 
-	// Create the main coordinator agent with fixed ADK tools
+	// Enhanced coordinator with better debugging
 	const { runner } = await AgentBuilder.create("onboarding_coordinator")
 		.withDescription(
 			"Guides users through personalized Polymarket onboarding with state management",
 		)
 		.withModel(env.LLM_MODEL)
 		.withInstruction(`
-			You are the Onboarding Coordinator for Polymarket.
+      You are the Onboarding Coordinator for Polymarket.
 
-			YOUR GOAL: Guide users through a smooth onboarding experience using available tools.
+      YOUR GOAL: Guide users through a smooth onboarding experience using available tools.
 
-			AVAILABLE TOOLS:
-			1. profile_user_interests - Analyze what users are interested in
-			2. recommend_markets - Find and explore relevant markets based on interests
-			3. select_market_for_trading - Prepare a specific market for trading
-			4. execute_trading_action - Handle trading operations
+      AVAILABLE TOOLS:
+      1. profile_user_interests - Analyze what users are interested in
+      2. recommend_markets - Find and explore relevant markets based on interests
+      3. select_market_for_trading - Prepare a specific market for trading (use the CONDITION ID from market results)
+      4. execute_trading_action - Handle trading operations
 
-			CONVERSATION FLOW:
-			1. When users mention interests → Use profile_user_interests
-			2. When users want to find or explore markets → Use recommend_markets  
-			3. When users select a market → Use select_market_for_trading
-			4. When users want to trade → Use execute_trading_action
+      CRITICAL WORKFLOW:
+      1. When users mention interests → Use profile_user_interests
+      2. When users want markets → Use recommend_markets first to populate available markets
+      3. When users want to select a market → Use select_market_for_trading with the CONDITION ID (0x...)
+      4. When users want to trade → Use execute_trading_action
 
-			CONTEXT AWARENESS:
-			- Remember user interests and preferences
-			- Keep track of available markets from searches
-			- Maintain selected market for trading
-			- Provide helpful next steps
+      IMPORTANT NOTES:
+      - ALWAYS use the CONDITION ID (starts with 0x) for select_market_for_trading, not the Market ID
+      - Markets must be found via recommend_markets first before selection
+      - Handle errors gracefully and suggest next steps
+      - Keep responses clear and actionable
 
-			PERSONALITY: 
-			- Friendly and helpful guide
-			- Educational but not pushy
-			- Clear about next steps
-			- Handle errors gracefully
+      DEBUGGING:
+      - If market selection fails, recommend searching for markets first
+      - If trading fails, suggest checking market selection first
+      - Provide helpful error messages with clear next steps
 
-			Always use the appropriate tool for each user request and provide clear guidance.
-		`)
+      PERSONALITY: Friendly, helpful, and clear about next steps. Handle errors gracefully.
+    `)
 		.withTools(
 			profileUserInterestsTool,
 			recommendMarketsTool,
@@ -307,4 +428,29 @@ export async function createOnboardingCoordinator(subAgents: {
 		.build();
 
 	return runner;
+}
+
+type AgentRunner = {
+	ask: (message: string) => Promise<string>;
+};
+
+interface Market {
+	id: string;
+	question: string;
+	description?: string;
+	endDate?: string;
+	outcomes: string[];
+	eventId?: string;
+	eventTitle?: string;
+	category?: string;
+	conditionId: string;
+	volume24hr?: number;
+	liquidity?: number;
+	relevanceScore?: number;
+}
+
+interface UserProfile {
+	interests: string[];
+	knowledgeLevel: "beginner" | "intermediate" | "advanced";
+	riskTolerance: "conservative" | "moderate" | "aggressive";
 }

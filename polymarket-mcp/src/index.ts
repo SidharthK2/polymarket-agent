@@ -7,6 +7,9 @@ import {
 	getOrderBookTool,
 	createBuyOrderTool,
 	createSellOrderTool,
+	createMarketBuyOrderTool,
+	createMarketSellOrderTool,
+	createGTDOrderTool,
 	getUserOrdersTool,
 	getUserPositionsTool,
 	searchMarketsTool,
@@ -14,7 +17,7 @@ import {
 	checkBuyOrderTool,
 	checkSellOrderTool,
 	selectMarketTool,
-	prepareOrderTool,
+	debugServiceLogicTool,
 } from "./tools/polymarket.js";
 
 /**
@@ -30,8 +33,11 @@ import {
  * - GET_POLYMARKET_MARKETS: Fetch available prediction markets
  * - GET_POLYMARKET_MARKET: Get details for a specific market
  * - GET_POLYMARKET_ORDERBOOK: Get order book for a token
- * - CREATE_POLYMARKET_BUY_ORDER: Place buy orders
- * - CREATE_POLYMARKET_SELL_ORDER: Place sell orders
+ * - CREATE_POLYMARKET_BUY_ORDER: Place GTC buy orders
+ * - CREATE_POLYMARKET_SELL_ORDER: Place GTC sell orders
+ * - CREATE_POLYMARKET_MARKET_BUY_ORDER: Place FOK market buy orders
+ * - CREATE_POLYMARKET_MARKET_SELL_ORDER: Place FOK market sell orders
+ * - CREATE_POLYMARKET_GTD_ORDER: Place GTD orders with expiration
  * - GET_POLYMARKET_USER_ORDERS: Get user's current orders
  * - GET_POLYMARKET_POSITIONS: Get user's portfolio positions and P&L
  * - CHECK_BUY_ORDER_REQUIREMENTS: Validate buy order before placement
@@ -54,36 +60,20 @@ async function main() {
 	server.addTool(getOrderBookTool);
 	server.addTool(createBuyOrderTool);
 	server.addTool(createSellOrderTool);
+	server.addTool(createMarketBuyOrderTool);
+	server.addTool(createMarketSellOrderTool);
+	server.addTool(createGTDOrderTool);
 	server.addTool(getUserOrdersTool);
 	server.addTool(getUserPositionsTool);
 	server.addTool(checkBuyOrderTool);
 	server.addTool(checkSellOrderTool);
 	server.addTool(selectMarketTool);
-	server.addTool(prepareOrderTool);
+	server.addTool(debugServiceLogicTool);
 
 	try {
 		await server.start({
 			transportType: "stdio",
 		});
-		console.log("✅ Polymarket MCP Server started successfully over stdio.");
-		console.log("   You can now connect to it using an MCP client.");
-		console.log("   Available tools:");
-		console.log(
-			"   • SEARCH_POLYMARKET_MARKETS - Enhanced search with relevance scoring",
-		);
-		console.log(
-			"   • SEARCH_POLYMARKET_BY_INTERESTS - Smart interest-based matching",
-		);
-		console.log(
-			"   • GET_POLYMARKET_EVENTS - Get markets by events (better organization)",
-		);
-		console.log("   • GET_POLYMARKET_MARKETS - Fetch available markets");
-		console.log("   • GET_POLYMARKET_MARKET - Get market details");
-		console.log("   • GET_POLYMARKET_ORDERBOOK - Get order book");
-		console.log("   • CREATE_POLYMARKET_BUY_ORDER - Place buy orders");
-		console.log("   • CREATE_POLYMARKET_SELL_ORDER - Place sell orders");
-		console.log("   • GET_POLYMARKET_USER_ORDERS - Get user orders");
-		console.log("   • GET_POLYMARKET_POSITIONS - Get user portfolio & P&L");
 	} catch (error) {
 		console.error("❌ Failed to start Polymarket MCP Server:", error);
 		process.exit(1);

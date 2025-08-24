@@ -97,6 +97,15 @@ async function main() {
 			].includes(tool.name),
 		);
 
+		// Add this debug:
+		console.log("🚨 DEBUG - Available discovery tools:");
+		// biome-ignore lint/complexity/noForEach: <explanation>
+		discoveryTools.forEach((tool) => console.log(`  - ${tool.name}`));
+
+		console.log("🚨 DEBUG - Available trading tools:");
+		// biome-ignore lint/complexity/noForEach: <explanation>
+		tradingTools.forEach((tool) => console.log(`  - ${tool.name}`));
+
 		// Create specialized agents
 		const interestProfiler = await createInterestProfilerAgent();
 		const marketRecommender =
