@@ -17,7 +17,6 @@ import {
 	checkBuyOrderTool,
 	checkSellOrderTool,
 	selectMarketTool,
-	debugServiceLogicTool,
 } from "./tools/polymarket.js";
 
 /**
@@ -68,7 +67,6 @@ async function main() {
 	server.addTool(checkBuyOrderTool);
 	server.addTool(checkSellOrderTool);
 	server.addTool(selectMarketTool);
-	server.addTool(debugServiceLogicTool);
 
 	try {
 		await server.start({

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { PolymarketService } from "../services/polymarket-service";
+import { PolymarketService } from "../services/polymarket-service.js";
 import { Side } from "@polymarket/clob-client";
 import dedent from "dedent";
 
@@ -935,111 +935,6 @@ export const getUserPositionsTool = {
 			`;
 		} catch (error) {
 			return `❌ Error: ${error instanceof Error ? error.message : "Unknown error"}`;
-		}
-	},
-} as const;
-
-// ✅ DEBUG: Verify service logic and API key creation
-export const debugServiceLogicTool = {
-	name: "DEBUG_POLYMARKET_SERVICE_LOGIC",
-	description: "Debug and verify the service initialization logic",
-	parameters: z.object({}),
-	execute: async (): Promise<string> => {
-		try {
-			// Check environment variables
-			const privateKey = process.env.PRIVATE_KEY;
-			const clobApiUrl =
-				process.env.CLOB_API_URL || "https://clob.polymarket.com";
-
-			let debugInfo = dedent`
-				🔧 **Service Logic Debug**
-
-				📋 **Environment Check:**
-				- PRIVATE_KEY: ${privateKey ? "✅ Set" : "❌ Not set"}
-				- CLOB_API_URL: ${clobApiUrl}
-				
-				${
-					!privateKey
-						? `
-				⚠️ **Missing PRIVATE_KEY - Service will be read-only**`
-						: ""
-				}
-			`;
-
-			if (privateKey) {
-				try {
-					// Test wallet creation
-					const { Wallet } = await import("@ethersproject/wallet");
-					const testWallet = new Wallet(privateKey);
-					debugInfo += dedent`
-						
-						🔑 **Wallet Test:**
-						- Wallet Created: ✅ Yes
-						- Address: ${testWallet.address}
-						- Private Key Format: ${privateKey.startsWith("0x") ? "✅ Valid" : "❌ Invalid (should start with 0x)"}
-					`;
-
-					// Test CLOB client creation
-					const { ClobClient, Chain } = await import("@polymarket/clob-client");
-					const tempClient = new ClobClient(
-						clobApiUrl,
-						Chain.POLYGON,
-						testWallet,
-					);
-					debugInfo += dedent`
-						
-						🔗 **CLOB Client Test:**
-						- Client Created: ✅ Yes
-						- API URL: ${clobApiUrl}
-						- Chain: POLYGON
-					`;
-
-					// Test API key creation
-					try {
-						const apiKeyCreds = await tempClient.createOrDeriveApiKey();
-						debugInfo += dedent`
-							
-							🔐 **API Key Test:**
-							- API Key Created: ✅ Yes
-							- Key ID: ${apiKeyCreds?.key || "N/A"}
-							- Status: Success
-						`;
-					} catch (apiKeyError) {
-						debugInfo += dedent`
-							
-							🔐 **API Key Test:**
-							- API Key Created: ❌ Failed
-							- Error: ${apiKeyError instanceof Error ? apiKeyError.message : "Unknown error"}
-							- This matches the error we saw in the logs
-						`;
-					}
-				} catch (walletError) {
-					debugInfo += dedent`
-						
-						🔑 **Wallet Test:**
-						- Wallet Created: ❌ Failed
-						- Error: ${walletError instanceof Error ? walletError.message : "Unknown error"}
-					`;
-				}
-			}
-
-			// Test service initialization
-			const { PolymarketService } = await import(
-				"../services/polymarket-service"
-			);
-			const service = new PolymarketService();
-
-			debugInfo += dedent`
-				
-				🚀 **Service Initialization Test:**
-				- Service Created: ✅ Yes
-				- Is Ready: ${service.isReadyForTrading() ? "✅ Yes" : "❌ No"}
-				- Wallet Address: ${service.getWalletAddress() || "❌ Not configured"}
-			`;
-
-			return debugInfo;
-		} catch (error) {
-			return `❌ Debug failed: ${error instanceof Error ? error.message : "Unknown error"}`;
 		}
 	},
 } as const;
