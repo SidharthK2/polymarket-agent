@@ -1,250 +1,265 @@
-# ADK Telegram Bot
+# 🤖 Polymarket Multi-Agent Trading System
 
-A Telegram bot starter template powered by ADK (AI Development Kit) that enables you to create intelligent, conversational bots for Telegram. This template provides a solid foundation for building AI-powered Telegram bots with persistent conversation memory.
+A sophisticated Telegram bot powered by AI agents for personalized prediction market discovery and trading on Polymarket.
 
-## Features
+## ✨ Features
 
-- 🤖 AI-powered conversations using ADK
-- 💬 Telegram integration via MCP (Model Context Protocol)
-- 🧠 Persistent conversation memory with SQLite
-- 🎯 Customizable bot personality and instructions
-- ⚡ Hot reload development
-- 🧹 Code formatting and linting
-- 🔧 TypeScript support
+### 🧠 **Multi-Agent Architecture**
+- **Interest Profiler Agent**: Analyzes user preferences and trading interests
+- **Market Recommender Agent**: Discovers relevant markets using advanced search
+- **Trading Agent**: Executes orders and manages positions
+- **Onboarding Coordinator**: Orchestrates the complete user experience
 
-## Prerequisites
+### 🎯 **Intelligent Market Discovery**
+- Natural language market search across categories (crypto, sports, politics, tech)
+- Tag-based filtering and volume/liquidity optimization
+- Personalized recommendations based on user interest profiling
+- Real-time market data and price discovery
 
-Before you begin, you'll need:
+### ⚡ **Advanced Trading Capabilities**
+- **Order Types**: Market orders (FOK), limit orders (GTC), and time-based orders (GTD)
+- **Order Management**: Balance validation, position tracking, and requirement checking
+- **Risk Management**: Automatic order size validation and balance verification
+- **Portfolio Analytics**: Position monitoring and P&L tracking
 
-1. **Telegram Bot Token**: Create a bot via [@BotFather](https://t.me/botfather) on Telegram
-2. **AI API Key**: Get an API key for your chosen AI model (e.g., Google AI Studio for Gemini)
+### 💬 **Telegram Integration**
+- Conversational interface for natural trading commands
+- State persistence across conversations
+- Real-time order execution and status updates
+- Error handling with actionable user guidance
 
-## Quick Start
+## 🏗️ Architecture
 
-1. **Clone and setup**
-   ```bash
-   git clone <your-repo>
-   cd adk-telegram-bot
-   pnpm install
-   ```
+```
+Telegram User Input
+        ↓
+  Onboarding Coordinator
+        ↓
+   Interest Profiler → Market Recommender → Trading Agent
+        ↓                     ↓                   ↓
+   User Preferences    Market Discovery    Order Execution
+        ↓                     ↓                   ↓
+     ADK State         Polymarket APIs      CLOB Trading
+```
 
-2. **Environment setup**
-   ```bash
-   cp example.env .env
-   # Edit .env with your tokens and API keys
-   ```
+### 🔧 **Core Components**
 
-3. **Configure your bot**
-   - Get a bot token from [@BotFather](https://t.me/botfather)
-   - Add the token to your `.env` file
-   - Customize the bot personality in `src/index.ts`
+#### **IQAI ADK Integration**
+- Multi-agent orchestration with state management
+- Tool integration via Model Context Protocol (MCP)
+- Conversation persistence and context awareness
 
-4. **Development**
-   ```bash
-   pnpm dev
-   ```
+#### **Polymarket Integration**
+- **Gamma API**: Market discovery and metadata
+- **CLOB API**: Real-time trading and order management  
+- **Data API**: Portfolio positions and historical data
 
-5. **Production**
-   ```bash
-   pnpm build
-   pnpm start
-   ```
+## 🚀 **Getting Started**
 
-## Environment Variables
+### Prerequisites
+- Node.js 24+
+- TypeScript
+- Telegram Bot Token
+- Polymarket wallet with USDC balance
 
-Required variables in your `.env` file:
+### Installation
+
+```bash
+# Clone the repository
+git clone <repository-url>
+cd polymarket-agent
+
+# Install dependencies
+npm install
+
+# Build the project
+npm run build
+```
+
+### Environment Setup
+
+Create a `.env` file:
 
 ```env
-# Telegram Bot Configuration
-TELEGRAM_BOT_TOKEN=your_telegram_bot_token_here
-
-# AI Model Configuration  
-LLM_MODEL=gemini-2.5-flash
-GOOGLE_API_KEY=your_google_api_key_here
-
-# CoinGecko MCP (Demo)
-# If you want to enable CoinGecko MCP tools using the demo environment
-CG_API_KEY=your_coingecko_demo_api_key_here
-COINGECKO_ENVIRONMENT=demo
+# Required
+TELEGRAM_BOT_TOKEN=your_telegram_bot_token
+PRIVATE_KEY=your_wallet_private_key
+LLM_MODEL=gemini-2.5-flash-preview-05-20
+GOOGLE_API_KEY=your_google_api_key
+CG_API_KEY=your_coingecko_api_key
 
 # Optional
-ADK_DEBUG=false
+DEBUG=false
+COINGECKO_ENVIRONMENT=demo
+CLOB_API_URL=https://clob.polymarket.com
+POLYGON_RPC_URL=https://polygon-rpc.com
 ```
 
-## Creating Your Telegram Bot
+### Running the System
 
-1. **Start a chat with [@BotFather](https://t.me/botfather)**
-2. **Send `/newbot`** and follow the instructions
-3. **Choose a name** for your bot (e.g., "My AI Assistant")
-4. **Choose a username** for your bot (must end in 'bot', e.g., "myaiassistant_bot")
-5. **Copy the token** provided by BotFather
-6. **Add the token** to your `.env` file
+```bash
+# Start the multi-agent system
+npm start
 
-## Customizing Your Bot
-
-### Bot Personality
-
-Edit the `withInstruction()` section in `src/index.ts` to customize your bot's personality:
-
-```typescript
-.withInstruction(`
-  You are a [YOUR BOT PERSONALITY HERE]
-  
-  Personality:
-  - [Trait 1]
-  - [Trait 2]
-  - [Trait 3]
-  
-  Guidelines:
-  - [Guideline 1]
-  - [Guideline 2]
-`)
+# Development mode with debugging
+DEBUG=true npm start
 ```
 
-### Bot Description
+## 🎮 **Usage Examples**
 
-Update the `withDescription()` to change what your bot does:
+### Market Discovery
+```
+User: "Show me crypto markets"
+Bot: [Returns personalized crypto prediction markets with prices]
 
-```typescript
-.withDescription("You are a [YOUR BOT DESCRIPTION]")
+User: "Find sports betting opportunities"  
+Bot: [Discovers relevant sports markets based on volume and liquidity]
 ```
 
-### AI Model
+### Trading Operations
+```
+User: "0xb656b85f5d1af20590c9ffff863e5f3e5820d75f42d5f781c1775071dc86e65a"
+Bot: [Prepares Bitcoin market for trading with current prices]
 
-Change the AI model by updating the `LLM_MODEL` in your `.env` file:
+User: "Buy 10 Yes at 0.65"
+Bot: [Executes buy order and returns confirmation with order ID]
 
-```env
-LLM_MODEL=claude-3-sonnet  # or any other supported model
+User: "Sell 5 No at 0.40"
+Bot: [Places sell order and shows execution details]
 ```
 
-## Bot Capabilities
+### Portfolio Management
+```
+User: "Show my positions"
+Bot: [Displays current holdings with P&L breakdown]
 
-Your bot can:
+User: "Check my orders"  
+Bot: [Lists active orders and status updates]
+```
 
-- 📝 **Respond to direct messages**
-- 💬 **Participate in group chats** (when mentioned)
-- 🧠 **Remember conversation context** across messages
-- 🎯 **Maintain different contexts** for different users/chats
-- 🔄 **Handle multiple conversations** simultaneously
-
-## Database
-
-The bot uses SQLite for persistent storage:
-
-- **Location**: `src/data/telegram_bot.db`
-- **Purpose**: Stores conversation history and context
-- **Auto-created**: Database and tables are created automatically
-
-## Development
-
-### Commands
-
-- `pnpm dev` - Start development with hot reload
-- `pnpm build` - Build for production
-- `pnpm start` - Start production build
-- `pnpm dev` with CoinGecko MCP (demo): ensure `.env` includes `CG_API_KEY` and optional `COINGECKO_ENVIRONMENT=demo`
-- `pnpm lint` - Check code formatting
-- `pnpm lint:fix` - Fix formatting issues
-
-### File Structure
+## 📦 **Project Structure**
 
 ```
 src/
-├── index.ts          # Main bot initialization and configuration
-└── data/             # SQLite database storage (auto-created)
-    └── telegram_bot.db
+├── agents/                          # AI agent implementations
+│   ├── interest-profiler-agent.ts   # User preference analysis
+│   ├── market-recommender-agent.ts  # Market discovery logic
+│   ├── trading-agent.ts             # Order execution specialist
+│   └── onboarding-coordinator.ts    # Main orchestration agent
+├── services/
+│   └── polymarket-service.ts        # Core Polymarket API integration
+├── tools/
+│   └── polymarket.ts                # MCP tool definitions
+├── env.ts                           # Environment configuration
+└── index.ts                         # Application entry point
 ```
 
-## Deployment
+## 🔌 **Polymarket MCP Server**
 
-### Local Development
+This project includes a standalone MCP server for Polymarket integration:
+
+### Features
+- **Market Search**: Discovery across categories with tag filtering
+- **Real-time Data**: Order books, prices, and market metadata
+- **Trading Operations**: Order creation, validation, and execution
+- **Portfolio Management**: Position tracking and balance monitoring
+
+### Available Tools
+```typescript
+// Market Discovery
+SEARCH_POLYMARKET_MARKETS
+SEARCH_POLYMARKET_BY_INTERESTS  
+GET_POLYMARKET_EVENTS
+GET_POLYMARKET_MARKETS
+
+// Trading Operations  
+CREATE_POLYMARKET_BUY_ORDER
+CREATE_POLYMARKET_SELL_ORDER
+CREATE_POLYMARKET_MARKET_BUY_ORDER
+CREATE_POLYMARKET_MARKET_SELL_ORDER
+CREATE_POLYMARKET_GTD_ORDER
+
+// Market Analysis
+GET_POLYMARKET_ORDERBOOK
+SELECT_MARKET_FOR_TRADING
+CHECK_BUY_ORDER_REQUIREMENTS
+CHECK_SELL_ORDER_REQUIREMENTS
+
+// Portfolio Management
+GET_POLYMARKET_POSITIONS
+GET_POLYMARKET_USER_ORDERS
+```
+
+### Standalone Usage
+
 ```bash
-pnpm dev
+# Build the MCP server
+cd polymarket-mcp
+npm install && npm run build
+
+# Run as standalone MCP server
+node dist/index.js
 ```
 
-With CoinGecko MCP (demo):
+## 🛠️ **Technical Stack**
 
-```bash
-export CG_API_KEY=your_coingecko_demo_key
-export COINGECKO_ENVIRONMENT=demo
-pnpm dev
-```
+### Core Technologies
+- **TypeScript**: Type-safe development with comprehensive schemas
+- **IQAI ADK**: Advanced agent framework with state management
+- **Model Context Protocol (MCP)**: Standardized tool integration
+- **Polymarket APIs**: Gamma (discovery), CLOB (trading), Data (analytics)
+- **Telegram Bot API**: Conversational interface with rich formatting
 
-### Production Server
-```bash
-pnpm build
-pnpm start
-```
+### API Integrations
+- **Polymarket Gamma API**: Market metadata and discovery
+- **Polymarket CLOB API**: Real-time trading and order management
+- **Polymarket Data API**: Portfolio positions and analytics
+- **CoinGecko API**: Crypto market data and price feeds
+- **Telegram Bot API**: Message handling and user interaction
 
-### Docker
-```bash
-docker build -t telegram-bot .
-docker run --env-file .env telegram-bot
-```
+### Development Tools
+- **Zod**: Runtime type validation and schema enforcement
+- **dotenv**: Environment configuration management
+- **ethers.js**: Ethereum wallet and transaction handling
+- **FastMCP**: High-performance MCP server implementation
 
-### Cloud Platforms
-- **Railway**: Simple deployment with persistent storage
-- **Heroku**: Classic PaaS deployment
-- **DigitalOcean**: VPS deployment
-- **AWS/GCP**: Cloud deployment
+## 🔒 **Security Features**
 
-## Testing Your Bot
+- Secure private key handling with ethers.js wallet integration
+- API credential derivation following Polymarket security standards
+- Balance and allowance validation before order execution
+- Error handling with detailed logging for debugging
+- Rate limiting and request optimization
 
-1. **Start the bot** with `pnpm dev`
-2. **Find your bot** on Telegram using the username you chose
-3. **Send a message** like "Hello!" 
-4. **Check the logs** to see the bot processing messages
-5. **Verify responses** are working correctly
+## 🎯 **Use Cases**
 
-## Troubleshooting
+### Individual Traders
+- Discover markets aligned with personal interests
+- Execute trades through natural conversation
+- Monitor portfolio performance and P&L
+- Get real-time market insights and pricing data
 
-### Common Issues
+### Developers
+- Integrate Polymarket functionality into applications
+- Build custom trading interfaces and workflows  
+- Access comprehensive market data and analytics
+- Implement automated trading strategies
 
-**Bot not responding:**
-- Check your `TELEGRAM_BOT_TOKEN` is correct
-- Ensure the bot is running (`pnpm dev`)
-- Check the console for error messages
+### Research & Analytics
+- Analyze prediction market trends and sentiment
+- Track market performance across categories
+- Study user behavior and trading patterns
+- Generate insights on market efficiency
 
-**AI responses not working:**
-- Verify your AI API key (e.g., `GOOGLE_API_KEY`)
-- Check if the model name is correct
-- Ensure you have API credits/quota
+## 📈 **Performance**
 
-**Database errors:**
-- Check write permissions in the `src/data/` directory
-- Ensure SQLite is available on your system
+- **Market Discovery**: Sub-second response times via optimized API calls
+- **Order Execution**: Real-time trading with immediate confirmation
+- **State Management**: Persistent conversation context with SQLite backend
+- **Error Recovery**: Graceful degradation with helpful user feedback
 
-### Getting Help
+## 📄 **License**
 
-- Check the [ADK Documentation](https://adk.iqai.com)
-- Review the console logs for detailed error messages
-- Ensure all environment variables are set correctly
+MIT License - See LICENSE file for details
 
-## Examples
-
-### Basic Conversation
-```
-User: Hello!
-Bot: Hello! 👋 How can I help you today?
-
-User: What's the weather like?
-Bot: I don't have access to real-time weather data, but I'd be happy to help you find a weather service or discuss weather-related topics! 🌤️
-```
-
-### Group Chat
-When mentioned in a group:
-```
-User: @yourbot What do you think about this?
-Bot: I'd be happy to share my thoughts! Could you tell me more about what specifically you'd like my opinion on? 🤔
-```
-
-## Learn More
-
-- [ADK Documentation](https://adk.iqai.com)
-- [Telegram Bot API](https://core.telegram.org/bots/api)
-- [BotFather Guide](https://core.telegram.org/bots#6-botfather)
-- [TypeScript Documentation](https://www.typescriptlang.org/)
-
-## License
-
-MIT License - see the [LICENSE](LICENSE) file for details.
+---

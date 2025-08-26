@@ -583,6 +583,15 @@ export class PolymarketService {
 	async checkBuyOrderRequirements(
 		orderValue: number,
 	): Promise<OrderRequirements> {
+		if (process.env.DEMO === "true") {
+			return {
+				canPlace: true,
+				balance: 1000,
+				allowance: 1000,
+				maxOrderSize: 1000,
+				error: undefined,
+			};
+		}
 		await this.ensureInitialized();
 
 		if (!this.clobClient || !this.wallet || !this.apiKeyCreds) {
@@ -647,6 +656,15 @@ export class PolymarketService {
 		tokenId: string,
 		size: number,
 	): Promise<OrderRequirements> {
+		if (process.env.DEMO === "true") {
+			return {
+				canPlace: true,
+				balance: 1000,
+				allowance: 1000,
+				maxOrderSize: 1000,
+				error: undefined,
+			};
+		}
 		await this.ensureInitialized();
 		if (!this.clobClient || !this.wallet) {
 			return {
@@ -668,6 +686,21 @@ export class PolymarketService {
 		amount: number, // Amount in USD
 		options: { skipValidation?: boolean } = {},
 	): Promise<OrderResponse> {
+		if (process.env.DEMO === "true") {
+			await new Promise((resolve) => setTimeout(resolve, 1000)); // Realistic delay
+			return {
+				success: true,
+				orderId: `DEMO_${Date.now()}`,
+				message: "Demo order created successfully!",
+				orderDetails: {
+					tokenId,
+					price: 0.5,
+					size: amount,
+					side: "BUY",
+					totalValue: amount,
+				},
+			};
+		}
 		await this.ensureInitialized();
 
 		if (!this.clobClient || !this.wallet || !this.apiKeyCreds) {
@@ -734,6 +767,13 @@ export class PolymarketService {
 		shares: number, // Number of shares to sell
 		options: { skipValidation?: boolean } = {},
 	): Promise<OrderResponse> {
+		if (process.env.DEMO === "true") {
+			return {
+				success: true,
+				orderId: `DEMO_${Date.now()}`,
+				message: "Demo order created successfully!",
+			};
+		}
 		await this.ensureInitialized();
 
 		if (!this.clobClient || !this.wallet || !this.apiKeyCreds) {
@@ -791,6 +831,21 @@ export class PolymarketService {
 		expirationMinutes = 1,
 		options: { skipValidation?: boolean } = {},
 	): Promise<OrderResponse> {
+		if (process.env.DEMO === "true") {
+			await new Promise((resolve) => setTimeout(resolve, 2000)); // Realistic delay
+			return {
+				success: true,
+				orderId: `DEMO_${Date.now()}`,
+				message: "Demo order created successfully!",
+				orderDetails: {
+					tokenId,
+					price,
+					size,
+					side: side.toString(),
+					totalValue: price * size,
+				},
+			};
+		}
 		await this.ensureInitialized();
 
 		if (!this.clobClient || !this.wallet || !this.apiKeyCreds) {
@@ -869,24 +924,6 @@ export class PolymarketService {
 			throw new Error("CLOB client or wallet not initialized");
 		}
 		return []; // Placeholder
-	}
-
-	// Utility methods
-	// ✅ ENHANCED READY CHECK
-	isReadyForTrading(): boolean {
-		const hasClient = !!this.clobClient;
-		const hasWallet = !!this.wallet;
-		const hasApiKey = !!this.apiKeyCreds;
-		const isInit = this.isInitialized;
-
-		// Only log missing components if we're past initialization
-		if (isInit) {
-			if (!hasClient) console.log("❌ Missing: CLOB client");
-			if (!hasWallet) console.log("❌ Missing: Wallet");
-			if (!hasApiKey) console.log("❌ Missing: API credentials");
-		}
-
-		return hasClient && hasWallet && hasApiKey && isInit;
 	}
 
 	canTrade(): boolean {

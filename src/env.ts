@@ -5,6 +5,7 @@ config();
 
 export const envSchema = z.object({
 	DEBUG: z.string().default("false"),
+	DEMO: z.string().default("true"),
 	GOOGLE_API_KEY: z.string(),
 	CG_API_KEY: z.string(),
 	TELEGRAM_BOT_TOKEN: z.string(),

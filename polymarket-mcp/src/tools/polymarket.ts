@@ -365,7 +365,6 @@ export const selectMarketTool = {
 				- Can Trade: ${polymarketService.canTrade() ? "✅ Yes" : "❌ No"}
 				- Wallet: ${polymarketService.getWalletAddress() || "❌ Not configured"}
 
-				💡 **Next:** Use CREATE_POLYMARKET_BUY_ORDER or CREATE_POLYMARKET_SELL_ORDER
 			`;
 		} catch (error) {
 			return `❌ Error selecting market: ${error instanceof Error ? error.message : "Unknown error"}`;
@@ -438,10 +437,6 @@ export const createBuyOrderTool = {
 	}): Promise<string> => {
 		const polymarketService = new PolymarketService();
 
-		if (!polymarketService.isReadyForTrading()) {
-			return "❌ Trading not available. Wallet not configured.";
-		}
-
 		try {
 			const rawMarketData = await polymarketService.getRawMarket(
 				params.conditionId,
@@ -506,10 +501,6 @@ export const createSellOrderTool = {
 	}): Promise<string> => {
 		const polymarketService = new PolymarketService();
 
-		if (!polymarketService.isReadyForTrading()) {
-			return "❌ Trading not available. Wallet not configured.";
-		}
-
 		try {
 			const rawMarketData = await polymarketService.getRawMarket(
 				params.conditionId,
@@ -573,10 +564,6 @@ export const createMarketBuyOrderTool = {
 	}): Promise<string> => {
 		const polymarketService = new PolymarketService();
 
-		if (!polymarketService.isReadyForTrading()) {
-			return "❌ Trading not available. Wallet not configured.";
-		}
-
 		try {
 			const rawMarketData = await polymarketService.getRawMarket(
 				params.conditionId,
@@ -633,10 +620,6 @@ export const createMarketSellOrderTool = {
 		shares: number;
 	}): Promise<string> => {
 		const polymarketService = new PolymarketService();
-
-		if (!polymarketService.isReadyForTrading()) {
-			return "❌ Trading not available. Wallet not configured.";
-		}
 
 		try {
 			const rawMarketData = await polymarketService.getRawMarket(
@@ -705,10 +688,6 @@ export const createGTDOrderTool = {
 	}): Promise<string> => {
 		const polymarketService = new PolymarketService();
 
-		if (!polymarketService.isReadyForTrading()) {
-			return "❌ Trading not available. Wallet not configured.";
-		}
-
 		try {
 			const rawMarketData = await polymarketService.getRawMarket(
 				params.conditionId,
@@ -769,10 +748,6 @@ export const checkBuyOrderTool = {
 	execute: async (params: { orderValue: number }): Promise<string> => {
 		const polymarketService = new PolymarketService();
 
-		if (!polymarketService.isReadyForTrading()) {
-			return "❌ Trading not available. Wallet not configured.";
-		}
-
 		try {
 			const requirements = await polymarketService.checkBuyOrderRequirements(
 				params.orderValue,
@@ -810,10 +785,6 @@ export const checkSellOrderTool = {
 	}): Promise<string> => {
 		const polymarketService = new PolymarketService();
 
-		if (!polymarketService.isReadyForTrading()) {
-			return "❌ Trading not available. Wallet not configured.";
-		}
-
 		try {
 			const requirements = await polymarketService.checkSellOrderRequirements(
 				params.tokenId,
@@ -845,10 +816,6 @@ export const getUserOrdersTool = {
 	parameters: z.object({}),
 	execute: async (): Promise<string> => {
 		const polymarketService = new PolymarketService();
-
-		if (!polymarketService.isReadyForTrading()) {
-			return "❌ Trading not available. Wallet not configured.";
-		}
 
 		try {
 			const orders = await polymarketService.getUserOrders();

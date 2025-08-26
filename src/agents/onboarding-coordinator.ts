@@ -7,104 +7,273 @@ import { z } from "zod";
 import { env } from "../env";
 import { getSqliteConnectionString } from "..";
 
+// function parseMarketsFromResponse(response: string): Market[] {
+// 	const markets: Market[] = [];
+// 	console.log("🔍 Parsing response for markets...");
+
+// 	const lines = response.split("\n");
+// 	let currentMarket: Market | null = null;
+
+// 	for (let i = 0; i < lines.length; i++) {
+// 		const line = lines[i].trim();
+
+// 		if (/^\d+\.\s+\*\*(.+?)\*\*/.test(line) && !line.includes("*   ")) {
+// 			if (currentMarket?.conditionId && currentMarket?.question) {
+// 				markets.push(currentMarket);
+// 				console.log(
+// 					`✅ Added market: ${currentMarket.question.substring(0, 30)}...`,
+// 				);
+// 			}
+
+// 			// Start new market
+// 			const questionMatch = line.match(/^\d+\.\s+\*\*(.+?)\*\*/);
+// 			currentMarket = {
+// 				question: questionMatch?.[1]?.trim() || "",
+// 				outcomes: ["Yes", "No"],
+// 				id: "",
+// 				conditionId: "",
+// 			};
+// 			console.log(`🆕 Started parsing: ${currentMarket.question}`);
+// 		}
+
+// 		// Parse bullet point lines starting with "*"
+// 		if (line.startsWith("*") && currentMarket) {
+// 			// Volume line: "*   Volume: $98,649.223 | Liquidity: $2,490.914"
+// 			if (line.includes("Volume:")) {
+// 				const volumeMatch = line.match(/Volume:\s*\$?([\d,]+(?:\.\d+)?)/);
+// 				if (volumeMatch) {
+// 					currentMarket.volume24hr = Number.parseFloat(
+// 						volumeMatch[1].replace(/,/g, ""),
+// 					);
+// 					console.log(`💰 Found Volume: ${currentMarket.volume24hr}`);
+// 				}
+// 			}
+
+// 			// End date line: "*   Ends: 9/30/2025"
+// 			if (line.includes("Ends:")) {
+// 				const endMatch = line.match(/Ends:\s*([^\n]+)/);
+// 				if (endMatch) {
+// 					currentMarket.endDate = endMatch[1].trim();
+// 					console.log(`📅 Found End Date: ${currentMarket.endDate}`);
+// 				}
+// 			}
+
+// 			// Condition ID line: "*   Condition ID: `0x...`"
+// 			if (line.includes("Condition ID:")) {
+// 				// Handle backticks: `0x...` or just 0x...
+// 				const conditionMatch = line.match(
+// 					/Condition ID:\s*`?(0x[a-fA-F0-9]+)`?/,
+// 				);
+// 				if (conditionMatch) {
+// 					currentMarket.conditionId = conditionMatch[1];
+// 					console.log(`🔗 Found Condition ID: ${currentMarket.conditionId}`);
+// 				}
+// 			}
+
+// 			// Market ID line: "*   Market ID: 547685"
+// 			if (line.includes("Market ID:")) {
+// 				const idMatch = line.match(/Market ID:\s*(\d+)/);
+// 				if (idMatch) {
+// 					currentMarket.id = idMatch[1];
+// 					console.log(`📊 Found Market ID: ${currentMarket.id}`);
+// 				}
+// 			}
+// 		}
+
+// 		// Handle "End date TBD" format
+// 		if (line.includes("End date TBD") && currentMarket) {
+// 			currentMarket.endDate = "TBD";
+// 		}
+// 	}
+
+// 	// Don't forget the last market
+// 	if (currentMarket?.conditionId && currentMarket?.question) {
+// 		markets.push(currentMarket);
+// 		console.log(
+// 			`✅ Added final market: ${currentMarket.question.substring(0, 30)}...`,
+// 		);
+// 	}
+
+// 	console.log(`🎯 TOTAL PARSED: ${markets.length} markets`);
+
+// 	// Debug output with more detail
+// 	markets.forEach((m, i) => {
+// 		console.log(`  ${i + 1}. "${m.question.substring(0, 40)}..."`);
+// 		console.log(`     📊 ID: ${m.id || "N/A"}`);
+// 		console.log(`     🔗 ConditionID: ${m.conditionId}`);
+// 		console.log(`     💰 Volume: ${m.volume24hr || "N/A"}`);
+// 	});
+
+// 	return markets;
+// }
+
 function parseMarketsFromResponse(response: string): Market[] {
 	const markets: Market[] = [];
-	console.log("🔍 Parsing response for markets...");
+	console.log("🔍 Parsing response for markets (robust version)...");
 
 	const lines = response.split("\n");
 	let currentMarket: Market | null = null;
 
 	for (let i = 0; i < lines.length; i++) {
 		const line = lines[i].trim();
+		if (!line) continue; // Skip empty lines
 
-		if (/^\d+\.\s+\*\*(.+?)\*\*/.test(line) && !line.includes("*   ")) {
+		// ROBUST MARKET DETECTION - Handle multiple formats
+		const isMarketStart =
+			/^\d+\.\s+/.test(line) || // "1. Question"
+			/^[⚽️🏈🏀🎯📊🔥💰⭐️🎲🏆]\s+/.test(line) || // "⚽️ Question"
+			(/^[A-Z]/.test(line) && line.includes("?")); // "Will Bitcoin..." (direct question)
+
+		if (isMarketStart) {
+			// Save previous market if it has required fields
 			if (currentMarket?.conditionId && currentMarket?.question) {
-				markets.push(currentMarket);
+				markets.push({ ...currentMarket });
 				console.log(
-					`✅ Added market: ${currentMarket.question.substring(0, 30)}...`,
+					`✅ Added market: ${currentMarket.question.substring(0, 40)}...`,
 				);
 			}
 
-			// Start new market
-			const questionMatch = line.match(/^\d+\.\s+\*\*(.+?)\*\*/);
+			// Extract question text from various formats
+			let questionText = line;
+			questionText = questionText.replace(/^\d+\.\s*/, ""); // Remove "1. "
+			questionText = questionText.replace(/^[⚽️🏈🏀🎯📊🔥💰⭐️🎲🏆]\s*/, ""); // Remove emojis
+			questionText = questionText.replace(/^\*\*/, "").replace(/\*\*$/, ""); // Remove **bold**
+			questionText = questionText.trim();
+
 			currentMarket = {
-				question: questionMatch?.[1]?.trim() || "",
+				question: questionText,
 				outcomes: ["Yes", "No"],
 				id: "",
 				conditionId: "",
 			};
-			console.log(`🆕 Started parsing: ${currentMarket.question}`);
+			console.log(
+				`🆕 Started parsing: ${currentMarket.question.substring(0, 50)}...`,
+			);
 		}
 
-		// Parse bullet point lines starting with "*"
-		if (line.startsWith("*") && currentMarket) {
-			// Volume line: "*   Volume: $98,649.223 | Liquidity: $2,490.914"
-			if (line.includes("Volume:")) {
-				const volumeMatch = line.match(/Volume:\s*\$?([\d,]+(?:\.\d+)?)/);
-				if (volumeMatch) {
-					currentMarket.volume24hr = Number.parseFloat(
-						volumeMatch[1].replace(/,/g, ""),
-					);
-					console.log(`💰 Found Volume: ${currentMarket.volume24hr}`);
+		// ROBUST DATA EXTRACTION - Handle various indentation and formats
+		if (
+			currentMarket &&
+			(line.startsWith("  ") || line.startsWith("    ") || line.includes(":"))
+		) {
+			// CONDITION ID - Multiple patterns
+			if (line.toLowerCase().includes("condition id")) {
+				// Patterns: "Condition ID: 0x123", "🔗 Condition ID: 0x123", "*   Condition ID: `0x123`"
+				const conditionPatterns = [
+					/condition\s*id[:\s]*`?(0x[a-fA-F0-9]{40,})`?/i,
+					/condition[:\s]+(0x[a-fA-F0-9]{40,})/i,
+					/(0x[a-fA-F0-9]{40,})/, // Just the hex string
+				];
+
+				for (const pattern of conditionPatterns) {
+					const match = line.match(pattern);
+					if (match) {
+						currentMarket.conditionId = match[1] || match[2] || match[0];
+						console.log(`🔗 Found Condition ID: ${currentMarket.conditionId}`);
+						break;
+					}
 				}
 			}
 
-			// End date line: "*   Ends: 9/30/2025"
-			if (line.includes("Ends:")) {
-				const endMatch = line.match(/Ends:\s*([^\n]+)/);
-				if (endMatch) {
-					currentMarket.endDate = endMatch[1].trim();
-					console.log(`📅 Found End Date: ${currentMarket.endDate}`);
+			// MARKET ID - Multiple patterns
+			if (line.toLowerCase().includes("market id")) {
+				const idPatterns = [/market\s*id[:\s]*(\d+)/i, /id[:\s]*(\d+)/i];
+
+				for (const pattern of idPatterns) {
+					const match = line.match(pattern);
+					if (match) {
+						currentMarket.id = match[1];
+						console.log(`📊 Found Market ID: ${currentMarket.id}`);
+						break;
+					}
 				}
 			}
 
-			// Condition ID line: "*   Condition ID: `0x...`"
-			if (line.includes("Condition ID:")) {
-				// Handle backticks: `0x...` or just 0x...
-				const conditionMatch = line.match(
-					/Condition ID:\s*`?(0x[a-fA-F0-9]+)`?/,
-				);
-				if (conditionMatch) {
-					currentMarket.conditionId = conditionMatch[1];
-					console.log(`🔗 Found Condition ID: ${currentMarket.conditionId}`);
+			// VOLUME - Multiple patterns
+			if (line.toLowerCase().includes("volume")) {
+				const volumePatterns = [
+					/volume[:\s]*\$?([\d,]+(?:\.\d+)?)/i,
+					/\$\s*([\d,]+(?:\.\d+)?)/, // Just dollar amounts
+				];
+
+				for (const pattern of volumePatterns) {
+					const match = line.match(pattern);
+					if (match) {
+						currentMarket.volume24hr = Number.parseFloat(
+							match[1].replace(/,/g, ""),
+						);
+						console.log(`💰 Found Volume: ${currentMarket.volume24hr}`);
+						break;
+					}
 				}
 			}
 
-			// Market ID line: "*   Market ID: 547685"
-			if (line.includes("Market ID:")) {
-				const idMatch = line.match(/Market ID:\s*(\d+)/);
-				if (idMatch) {
-					currentMarket.id = idMatch[1];
-					console.log(`📊 Found Market ID: ${currentMarket.id}`);
+			// END DATE - Multiple patterns
+			if (
+				line.toLowerCase().includes("end") ||
+				line.toLowerCase().includes("date")
+			) {
+				const datePatterns = [
+					/ends?[:\s]*([^|\n]+)/i,
+					/date[:\s]*([^|\n]+)/i,
+					/(\d{1,2}\/\d{1,2}\/\d{4})/, // MM/DD/YYYY
+					/(\d{4}-\d{2}-\d{2})/, // YYYY-MM-DD
+				];
+
+				for (const pattern of datePatterns) {
+					const match = line.match(pattern);
+					if (match) {
+						currentMarket.endDate = match[1].trim();
+						console.log(`📅 Found End Date: ${currentMarket.endDate}`);
+						break;
+					}
+				}
+			}
+
+			// CATEGORY/TAGS - Extract context
+			if (line.toLowerCase().includes("relevant to") || line.includes("🏷️")) {
+				const categoryMatch =
+					line.match(/relevant\s*to[:\s]*([^|\n]+)/i) ||
+					line.match(/🏷️\s*([^|\n]+)/);
+				if (categoryMatch) {
+					currentMarket.category = categoryMatch[1].trim();
+					console.log(`🏷️ Found Category: ${currentMarket.category}`);
 				}
 			}
 		}
 
-		// Handle "End date TBD" format
-		if (line.includes("End date TBD") && currentMarket) {
+		// Handle special cases
+		if (line.toLowerCase().includes("tbd") && currentMarket) {
 			currentMarket.endDate = "TBD";
 		}
 	}
 
-	// Don't forget the last market
+	// Add final market
 	if (currentMarket?.conditionId && currentMarket?.question) {
-		markets.push(currentMarket);
+		markets.push({ ...currentMarket });
 		console.log(
-			`✅ Added final market: ${currentMarket.question.substring(0, 30)}...`,
+			`✅ Added final market: ${currentMarket.question.substring(0, 40)}...`,
 		);
 	}
 
-	console.log(`🎯 TOTAL PARSED: ${markets.length} markets`);
+	console.log(`🎯 ROBUST PARSER RESULT: ${markets.length} markets found`);
 
-	// Debug output with more detail
-	markets.forEach((m, i) => {
-		console.log(`  ${i + 1}. "${m.question.substring(0, 40)}..."`);
-		console.log(`     📊 ID: ${m.id || "N/A"}`);
-		console.log(`     🔗 ConditionID: ${m.conditionId}`);
-		console.log(`     💰 Volume: ${m.volume24hr || "N/A"}`);
-	});
+	// Debug output for failed parsing
+	if (markets.length === 0) {
+		console.log("⚠️ No markets parsed. Response preview:");
+		console.log(response.substring(0, 500));
+		console.log("...");
+	}
 
-	return markets;
+	// Validate markets have required fields
+	const validMarkets = markets.filter((m) => m.conditionId && m.question);
+	if (validMarkets.length !== markets.length) {
+		console.log(
+			`⚠️ Filtered out ${markets.length - validMarkets.length} invalid markets`,
+		);
+	}
+
+	return validMarkets;
 }
 interface Market {
 	id: string;
