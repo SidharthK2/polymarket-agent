@@ -83,7 +83,6 @@ export async function createMarketRecommenderAgent(
 	return wrappedRunner;
 }
 
-// SIMPLIFIED: Parse markets from response (much simpler)
 function parseMarketsFromResponse(response: string): any[] {
 	const markets: any[] = [];
 

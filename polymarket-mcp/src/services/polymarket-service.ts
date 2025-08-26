@@ -365,7 +365,7 @@ export class PolymarketService {
 			console.log(`📊 Fallback search for: "${query}"`);
 			const allResults = await this.getMarketsFromGamma({
 				limit: limit * 3,
-				volume_num_min: 0.001,
+				volume_num_min: 0.1,
 			});
 
 			// Simple text filtering
@@ -412,7 +412,7 @@ export class PolymarketService {
 					Array.isArray(market.events) && market.events[0]
 						? market.events[0].ticker || market.category || ""
 						: market.category || "",
-				volume24hr: Number(market.volume || 0),
+				volume24hr: Number(market.volume24hr || 0),
 				liquidity: Number(market.liquidity || market.liquidityNum || 0),
 			}))
 			.filter((m) => m.question); // Filter out empty questions

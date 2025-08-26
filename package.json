@@ -32,7 +32,7 @@
 	"homepage": "https://github.com/IQAICOM/adk-telegram-bot#readme",
 	"dependencies": {
 		"@coingecko/coingecko-mcp": "^1.11.2",
-		"@iqai/adk": "^0.1.19",
+		"@iqai/adk": "^0.1.22",
 		"abitype": "^1.0.8",
 		"better-sqlite3": "^12.2.0",
 		"dotenv": "^17.2.0",

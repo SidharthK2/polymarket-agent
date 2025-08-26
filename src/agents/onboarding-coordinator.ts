@@ -1,26 +1,23 @@
-import { AgentBuilder, createTool } from "@iqai/adk";
+import {
+	AgentBuilder,
+	createTool,
+	createDatabaseSessionService,
+} from "@iqai/adk";
 import { z } from "zod";
 import { env } from "../env";
+import { getSqliteConnectionString } from "..";
 
 function parseMarketsFromResponse(response: string): Market[] {
 	const markets: Market[] = [];
 	console.log("🔍 Parsing response for markets...");
 
-	// Your format: numbered list with bullet points and backticks
-	// 1.  **Question**
-	//     *   Volume: $X | Liquidity: $Y
-	//     *   Ends: Date
-	//     *   Condition ID: `0x...`
-
 	const lines = response.split("\n");
-	let currentMarket: any = null;
+	let currentMarket: Market | null = null;
 
 	for (let i = 0; i < lines.length; i++) {
 		const line = lines[i].trim();
 
-		// Start of new market: "1.  **Question**"
-		if (/^\d+\.\s+\*\*/.test(line)) {
-			// Save previous market if valid
+		if (/^\d+\.\s+\*\*(.+?)\*\*/.test(line) && !line.includes("*   ")) {
 			if (currentMarket?.conditionId && currentMarket?.question) {
 				markets.push(currentMarket);
 				console.log(
@@ -214,8 +211,8 @@ export async function createOnboardingCoordinator(subAgents: {
 				);
 
 				// Store in ADK state
-				await context.state.set("availableMarkets", markets);
-				await context.state.set("lastSearchQuery", searchQuery);
+				context.state.set("availableMarkets", markets);
+				context.state.set("lastSearchQuery", searchQuery);
 
 				console.log(
 					"💾 Stored in state - availableMarkets count:",
@@ -303,7 +300,7 @@ export async function createOnboardingCoordinator(subAgents: {
 						outcomes: ["Yes", "No"],
 					};
 
-					await context.state.set("selectedMarket", fallbackMarket);
+					context.state.set("selectedMarket", fallbackMarket);
 					console.log("💾 Stored fallback market in selectedMarket state");
 
 					return directResponse;
@@ -322,7 +319,7 @@ export async function createOnboardingCoordinator(subAgents: {
 				);
 
 				// Store selected market in ADK state
-				await context.state.set("selectedMarket", market);
+				context.state.set("selectedMarket", market);
 				console.log(
 					"✅ Selected market for trading:",
 					`${market.question.substring(0, 50)}...`,
@@ -424,6 +421,9 @@ export async function createOnboardingCoordinator(subAgents: {
 			recommendMarketsTool,
 			selectMarketForTradingTool,
 			executeTradingActionTool,
+		)
+		.withSessionService(
+			createDatabaseSessionService(getSqliteConnectionString("agent-database")),
 		)
 		.build();
 
