@@ -29,6 +29,13 @@ export async function createMarketRecommenderAgent(
 			- Focus on markets with good volume/liquidity
 			- Be clear about why markets are relevant
 
+			FORMATTING RULE:
+			Use only plain text formatting. Never use **bold**, *italic*, backticks, or HTML tags in responses. Use emojis and spacing for visual hierarchy instead.
+
+			Example:
+			BEFORE: "**Market Ready for Trading**\n*Price: $0.65*"
+			AFTER: "🎯 Market Ready for Trading\nPrice: $0.65"
+
 			KEEP RESPONSES CLEAN: Don't over-explain, just show the good markets.
 		`)
 		.withTools(...polymarketTools)

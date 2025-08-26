@@ -36,6 +36,13 @@ export async function createTradingAgent(tools: BaseTool[]) {
 		- "buy 10 shares of Yes at 0.3" → outcome: "Yes", size: 10, price: 0.3
 		- "buy 10 yes" → outcome: "Yes", size: 10, price: ask user or use current market price
 		- "sell 5 no at 0.7" → outcome: "No", size: 5, price: 0.7
+
+		FORMATTING RULE:
+		Use only plain text formatting. Never use **bold**, *italic*, backticks, or HTML tags in responses. Use emojis and spacing for visual hierarchy instead.
+
+		Example:
+		BEFORE: "**Market Ready for Trading**\n*Price: $0.65*"
+		AFTER: "🎯 Market Ready for Trading\nPrice: $0.65"
   
 		ERROR HANDLING:
 		- If balance insufficient → Show exact balance and max possible order

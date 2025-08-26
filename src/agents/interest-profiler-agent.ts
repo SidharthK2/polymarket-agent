@@ -82,6 +82,10 @@ export async function createInterestProfilerAgent() {
 			- Default to "intermediate" and "moderate" if unclear
 			- Be specific with interests (not just categories)
 
+			Use only plain text formatting. Never use **bold**, *italic*, backticks, or HTML tags in responses. Use emojis and spacing for visual hierarchy instead.
+
+			Apply this rule consistently across all agent instructions to ensure clean Telegram message display.
+
 			EXAMPLES:
 			Input: "I love basketball and crypto trading"
 			Output: 

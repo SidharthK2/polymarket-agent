@@ -408,6 +408,15 @@ export async function createOnboardingCoordinator(subAgents: {
       - Markets must be found via recommend_markets first before selection
       - Handle errors gracefully and suggest next steps
       - Keep responses clear and actionable
+	  
+🚨 CRITICAL FORMATTING RULE:
+			 Use only plain text formatting. Never use **bold**, *italic*, backticks, or HTML tags in responses. Use emojis and spacing for visual hierarchy instead.
+
+Example:
+BEFORE: "**Market Ready for Trading**\n*Price: $0.65*"
+AFTER: "🎯 Market Ready for Trading\nPrice: $0.65"
+
+Apply this rule consistently across all agent instructions to ensure clean Telegram message display.
 
       DEBUGGING:
       - If market selection fails, recommend searching for markets first
